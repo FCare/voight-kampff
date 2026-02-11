@@ -1,138 +1,140 @@
 # Voight-Kampff Authentication Service
 
-Un service d'authentification par clés API autonome basé sur Flask et SQLite.
+**Voight-Kampff** - Named after the empathy test from Philip K. Dick's "Do Androids Dream of Electric Sheep?" and the Blade Runner universe, this authentication service distinguishes between legitimate users and unauthorized entities through API key validation.
 
-## Vue d'ensemble
+A standalone API key authentication service built with Flask and SQLite.
 
-Voight-Kampff est un service d'authentification léger qui fournit :
-- Gestion des utilisateurs avec interface web
-- Génération et validation de clés API
-- Système d'authentification sécurisé
-- Interface d'administration
-- Base de données SQLite intégrée
+## Overview
 
-## Installation et démarrage rapide
+Voight-Kampff is a lightweight authentication service that provides:
+- User management with web interface
+- API key generation and validation
+- Secure authentication system
+- Administrative interface
+- Integrated SQLite database
 
-### Prérequis
+## Installation and Quick Start
+
+### Prerequisites
 - Docker
 - Docker Compose
 
-### Démarrage
+### Getting Started
 
-1. **Cloner ou copier le répertoire voight-kampff**
+1. **Clone or copy the voight-kampff directory**
 
-2. **Configurer l'environnement**
+2. **Configure the environment**
    ```bash
    cd voight-kampff
    cp .env.example .env
    ```
 
-3. **Générer une clé secrète sécurisée**
+3. **Generate a secure secret key**
    ```bash
    python3 -c "import secrets; print(secrets.token_urlsafe(64))"
    ```
 
-4. **Éditer le fichier .env avec vos valeurs**
-   - Remplacez `VK_SECRET_KEY` par la clé générée
-   - Configurez les identifiants admin (`VK_ADMIN_USERNAME`, `VK_ADMIN_PASSWORD`, `VK_ADMIN_EMAIL`)
+4. **Edit the .env file with your values**
+   - Replace `VK_SECRET_KEY` with the generated key
+   - Configure admin credentials (`VK_ADMIN_USERNAME`, `VK_ADMIN_PASSWORD`, `VK_ADMIN_EMAIL`)
 
-5. **Démarrer le service**
+5. **Start the service**
    ```bash
    docker-compose up -d
    ```
 
-6. **Accéder au service**
-   - Interface web : http://localhost:8080
-   - Connexion avec les identifiants admin configurés
+6. **Access the service**
+   - Web interface: http://localhost:8080
+   - Login with the configured admin credentials
 
 ## Configuration
 
-### Variables d'environnement
+### Environment Variables
 
-| Variable | Description | Défaut |
+| Variable | Description | Default |
 |----------|-------------|---------|
-| `VK_ADMIN_USERNAME` | Nom d'utilisateur admin initial | - |
-| `VK_ADMIN_PASSWORD` | Mot de passe admin initial | - |
-| `VK_ADMIN_EMAIL` | Email admin initial | - |
-| `VK_SECRET_KEY` | Clé secrète pour les sessions | - |
-| `VK_SESSION_EXPIRE_HOURS` | Durée d'expiration des sessions | 24 |
-| `VK_DB_PATH` | Chemin de la base de données | /data/voight-kampff.db |
+| `VK_ADMIN_USERNAME` | Initial admin username | - |
+| `VK_ADMIN_PASSWORD` | Initial admin password | - |
+| `VK_ADMIN_EMAIL` | Initial admin email | - |
+| `VK_SECRET_KEY` | Secret key for sessions | - |
+| `VK_SESSION_EXPIRE_HOURS` | Session expiration duration | 24 |
+| `VK_DB_PATH` | Database file path | /data/voight-kampff.db |
 
 ### Volumes
 
-- `./data:/data` - Stockage de la base de données SQLite
-- `./config:/config` - Fichiers de configuration (optionnel)
+- `./data:/data` - SQLite database storage
+- `./config:/config` - Configuration files (optional)
 
-## Utilisation
+## Usage
 
-### Interface Web
-1. Connectez-vous avec les identifiants admin
-2. Créez des utilisateurs
-3. Générez des clés API
-4. Gérez les permissions
+### Web Interface
+1. Login with admin credentials
+2. Create users
+3. Generate API keys
+4. Manage permissions
 
 ### API
-Le service expose des endpoints pour :
-- Validation des clés API
-- Gestion des utilisateurs
-- Authentification
+The service exposes endpoints for:
+- API key validation
+- User management
+- Authentication
 
 ## Maintenance
 
-### Sauvegarde
+### Backup
 ```bash
-# Sauvegarder la base de données
+# Backup the database
 cp ./data/voight-kampff.db ./backups/voight-kampff-$(date +%Y%m%d).db
 ```
 
 ### Logs
 ```bash
-# Voir les logs
+# View logs
 docker-compose logs voight-kampff
 
-# Suivre les logs en temps réel
+# Follow logs in real-time
 docker-compose logs -f voight-kampff
 ```
 
-### Mise à jour
+### Updates
 ```bash
-# Arrêter le service
+# Stop the service
 docker-compose down
 
-# Reconstruire l'image
+# Rebuild the image
 docker-compose build
 
-# Redémarrer
+# Restart
 docker-compose up -d
 ```
 
-## Sécurité
+## Security
 
-- Utilisez des mots de passe forts pour les comptes admin
-- Générez une clé secrète unique pour chaque installation
-- Sauvegardez régulièrement la base de données
-- Surveillez les logs d'accès
-- Utilisez HTTPS en production avec un reverse proxy
+- Use strong passwords for admin accounts
+- Generate a unique secret key for each installation
+- Regularly backup the database
+- Monitor access logs
+- Use HTTPS in production with a reverse proxy
 
-## Développement
+## Development
 
-Pour le développement local :
+For local development:
 ```bash
-# Installer les dépendances
+# Install dependencies
 pip install -r requirements.txt
 
-# Configurer les variables d'environnement
+# Configure environment variables
 export VK_SECRET_KEY="your-secret-key"
 export VK_ADMIN_USERNAME="admin"
-# ... autres variables
+# ... other variables
 
-# Lancer l'application
+# Run the application
 python app/main.py
 ```
 
 ## Support
 
-Pour les problèmes ou questions :
-- Vérifiez les logs avec `docker-compose logs voight-kampff`
-- Assurez-vous que toutes les variables d'environnement sont configurées
-- Vérifiez que le port 8080 n'est pas utilisé par un autre service
+For issues or questions:
+- Check logs with `docker-compose logs voight-kampff`
+- Ensure all environment variables are configured
+- Verify that port 8080 is not used by another service
