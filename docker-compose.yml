@@ -1,0 +1,33 @@
+version: '3.8'
+
+networks:
+  ansible:
+    external: true
+
+services:
+  # Voight-Kampff - API Key Authentication Service
+  voight-kampff:
+    build: .
+    container_name: voight-kampff
+    restart: unless-stopped
+    networks:
+      - ansible
+    ports:
+      - "8080:8080"
+    environment:
+      - TZ=Europe/Paris
+      - VK_DB_PATH=${VK_DB_PATH:-/data/voight-kampff.db}
+      - VK_SECRET_KEY=${VK_SECRET_KEY}
+      - VK_SESSION_EXPIRE_HOURS=${VK_SESSION_EXPIRE_HOURS:-24}
+      - VK_ADMIN_USERNAME=${VK_ADMIN_USERNAME}
+      - VK_ADMIN_PASSWORD=${VK_ADMIN_PASSWORD}
+      - VK_ADMIN_EMAIL=${VK_ADMIN_EMAIL}
+    volumes:
+      - ./data:/data
+      - ./config:/config
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
