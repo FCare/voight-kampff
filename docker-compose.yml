@@ -8,6 +8,7 @@ services:
   # Voight-Kampff - API Key Authentication Service
   voight-kampff:
     build: .
+    image: voight-kampff
     container_name: voight-kampff
     restart: unless-stopped
     networks:
