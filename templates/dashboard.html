@@ -388,30 +388,14 @@
                     <div class="form-group">
                         <label>Services autorisés</label>
                         <div class="scopes-checkboxes">
-                            {% if 'thebrain' in user_allowed_scopes %}
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="thebrain" name="scopes" value="thebrain">
-                                <label for="thebrain">TheBrain (LLM)</label>
-                            </div>
-                            {% endif %}
-                            {% if 'unmute-talk' in user_allowed_scopes %}
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="tts" name="scopes" value="unmute-talk">
-                                <label for="tts">TTS (Text-to-Speech)</label>
-                            </div>
-                            {% endif %}
-                            {% if 'unmute-transcript' in user_allowed_scopes %}
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="stt" name="scopes" value="unmute-transcript">
-                                <label for="stt">STT (Speech-to-Text)</label>
-                            </div>
-                            {% endif %}
-                            {% if 'chatterbox' in user_allowed_scopes %}
-                            <div class="checkbox-item">
-                                <input type="checkbox" id="chatterbox" name="scopes" value="chatterbox">
-                                <label for="chatterbox">Chatterbox TTS</label>
-                            </div>
-                            {% endif %}
+                            {% for service in available_services %}
+                                {% if service.name in user_allowed_scopes %}
+                                <div class="checkbox-item">
+                                    <input type="checkbox" id="{{ service.name }}" name="scopes" value="{{ service.name }}">
+                                    <label for="{{ service.name }}">{{ service.display_name }}</label>
+                                </div>
+                                {% endif %}
+                            {% endfor %}
                         </div>
                     </div>
                     
@@ -565,33 +549,14 @@
                                             {% set all_services = admin_user.allowed_scopes == "*" %}
                                             
                                             <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.9em;">
-                                                <label class="service-label" data-service="thebrain">
-                                                    <input type="checkbox" name="service" value="thebrain"
-                                                           {% if "thebrain" in user_scopes %}checked{% endif %}
+                                                {% for service in available_services %}
+                                                <label class="service-label" data-service="{{ service.name }}">
+                                                    <input type="checkbox" name="service" value="{{ service.name }}"
+                                                           {% if service.name in user_scopes %}checked{% endif %}
                                                            onchange="submitScopeForm('{{ admin_user.id }}')">
-                                                    <span>TheBrain</span>
+                                                    <span>{{ service.display_name }}</span>
                                                 </label>
-                                                
-                                                <label class="service-label" data-service="unmute-talk">
-                                                    <input type="checkbox" name="service" value="unmute-talk"
-                                                           {% if "unmute-talk" in user_scopes %}checked{% endif %}
-                                                           onchange="submitScopeForm('{{ admin_user.id }}')">
-                                                    <span>TTS</span>
-                                                </label>
-                                                
-                                                <label class="service-label" data-service="unmute-transcript">
-                                                    <input type="checkbox" name="service" value="unmute-transcript"
-                                                           {% if "unmute-transcript" in user_scopes %}checked{% endif %}
-                                                           onchange="submitScopeForm('{{ admin_user.id }}')">
-                                                    <span>STT</span>
-                                                </label>
-                                                
-                                                <label class="service-label" data-service="chatterbox">
-                                                    <input type="checkbox" name="service" value="chatterbox"
-                                                           {% if "chatterbox" in user_scopes %}checked{% endif %}
-                                                           onchange="submitScopeForm('{{ admin_user.id }}')">
-                                                    <span>Chatterbox</span>
-                                                </label>
+                                                {% endfor %}
                                             </div>
                                         </form>
                                     </div>

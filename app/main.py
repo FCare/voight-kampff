@@ -585,6 +585,15 @@ async def dashboard(
     # Parse user's allowed scopes for the API key creation form (refactored with ServiceConfig)
     user_allowed_scopes = parse_user_scopes(current_user)
     
+    # Get all available services sorted by priority for dynamic template
+    available_services = []
+    for service_name, service_data in sorted(ServiceConfig.SERVICES.items(), key=lambda x: x[1]["priority"]):
+        available_services.append({
+            'name': service_name,
+            'display_name': service_data['display_name'],
+            'priority': service_data['priority']
+        })
+    
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
         "user": current_user.username,
@@ -594,6 +603,7 @@ async def dashboard(
         "api_keys": api_keys_formatted,
         "admin_users": admin_users,
         "user_allowed_scopes": user_allowed_scopes,
+        "available_services": available_services,
         "success": success,
         "error": error
     })
