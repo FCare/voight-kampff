@@ -46,25 +46,35 @@ class ServiceConfig:
     
     # Services disponibles avec leurs métadonnées
     SERVICES = {
+        "joshua-frontend": {
+            "url": "https://assistant.caronboulme.fr",
+            "display_name": "Joshua Assistant",
+            "priority": 1
+        },
         "thebrain": {
             "url": "https://thebrain.caronboulme.fr",
             "display_name": "The Brain",
-            "priority": 1
+            "priority": 2
         },
         "chatterbox": {
             "url": "https://chatterbox.caronboulme.fr",
             "display_name": "Chatterbox",
-            "priority": 2
+            "priority": 3
         },
         "unmute-talk": {
             "url": "https://unmute-talk.caronboulme.fr",
             "display_name": "Unmute Talk",
-            "priority": 3
+            "priority": 4
         },
         "unmute-transcript": {
             "url": "https://unmute-transcript.caronboulme.fr",
             "display_name": "Unmute Transcript",
-            "priority": 4
+            "priority": 5
+        },
+        "joshua-backend": {
+            "url": "https://joshua.caronboulme.fr",
+            "display_name": "Joshua API",
+            "priority": 6
         }
     }
     
@@ -1421,9 +1431,12 @@ async def landing_page(
                 
                 <div class="services">
                     <h3>Available Services</h3>
+                    <a href="{ServiceConfig.SERVICES["joshua-frontend"]["url"]}" class="service-link">🤖 Joshua Assistant</a>
                     <a href="{ServiceConfig.SERVICES["thebrain"]["url"]}" class="service-link">🧠 The Brain</a>
-                    <a href="{ServiceConfig.SERVICES["unmute-talk"]["url"]}" class="service-link">🎤 Unmute Talk</a>
                     <a href="{ServiceConfig.SERVICES["chatterbox"]["url"]}" class="service-link">💬 Chatterbox</a>
+                    <a href="{ServiceConfig.SERVICES["unmute-talk"]["url"]}" class="service-link">🎤 Unmute Talk</a>
+                    <a href="{ServiceConfig.SERVICES["unmute-transcript"]["url"]}" class="service-link">📝 Unmute Transcript</a>
+                    <a href="{ServiceConfig.SERVICES["joshua-backend"]["url"]}" class="service-link">🔧 Joshua API</a>
                     <a href="https://photos.caronboulme.fr" class="service-link">📸 Photos</a>
                     
                     <br>
