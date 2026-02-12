@@ -46,7 +46,7 @@ class ServiceConfig:
     
     # Services disponibles avec leurs métadonnées
     SERVICES = {
-        "joshua-frontend": {
+        "assistant": {
             "url": "https://assistant.caronboulme.fr",
             "display_name": "Joshua Assistant",
             "priority": 1
@@ -71,7 +71,7 @@ class ServiceConfig:
             "display_name": "Unmute Transcript",
             "priority": 5
         },
-        "joshua-backend": {
+        "joshua": {
             "url": "https://joshua.caronboulme.fr",
             "display_name": "Joshua API",
             "priority": 6
@@ -1441,12 +1441,12 @@ async def landing_page(
                 
                 <div class="services">
                     <h3>Available Services</h3>
-                    <a href="{ServiceConfig.SERVICES["joshua-frontend"]["url"]}" class="service-link">🤖 Joshua Assistant</a>
+                    <a href="{ServiceConfig.SERVICES["assistant"]["url"]}" class="service-link">🤖 Joshua Assistant</a>
                     <a href="{ServiceConfig.SERVICES["thebrain"]["url"]}" class="service-link">🧠 The Brain</a>
                     <a href="{ServiceConfig.SERVICES["chatterbox"]["url"]}" class="service-link">💬 Chatterbox</a>
                     <a href="{ServiceConfig.SERVICES["unmute-talk"]["url"]}" class="service-link">🎤 Unmute Talk</a>
                     <a href="{ServiceConfig.SERVICES["unmute-transcript"]["url"]}" class="service-link">📝 Unmute Transcript</a>
-                    <a href="{ServiceConfig.SERVICES["joshua-backend"]["url"]}" class="service-link">🔧 Joshua API</a>
+                    <a href="{ServiceConfig.SERVICES["joshua"]["url"]}" class="service-link">🔧 Joshua API</a>
                     <a href="https://photos.caronboulme.fr" class="service-link">📸 Photos</a>
                     
                     <br>
