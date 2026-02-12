@@ -437,7 +437,7 @@
                 <table class="api-keys-table">
                     <thead>
                         <tr>
-                            <th>Clé</th>
+                            <th>Nom</th>
                             <th>API Key</th>
                             <th>Services</th>
                             <th>Statut</th>
@@ -450,7 +450,7 @@
                     <tbody>
                         {% for key in api_keys %}
                         <tr>
-                            <td>{{ key.api_key[:9] }}</td>
+                            <td><strong>{{ key.key_name }}</strong></td>
                             <td>
                                 <div class="api-key-container">
                                     <div class="api-key-value" title="{{ key.api_key }}">
