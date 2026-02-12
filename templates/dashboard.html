@@ -535,32 +535,23 @@
                             </td>
                             <td>{{ admin_user.api_key_count }}</td>
                             <td>
-                                <details>
-                                    <summary style="cursor: pointer; font-size: 0.9em;">
-                                        {% if admin_user.allowed_scopes == "*" %}
-                                            Tous les services
-                                        {% else %}
-                                            Services: {{ admin_user.allowed_scopes }}
-                                        {% endif %}
-                                    </summary>
-                                    <div style="margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
-                                        <form id="scope-form-{{ admin_user.id }}" method="post" action="/auth/admin/set-user-scopes/{{ admin_user.id }}">
-                                            {% set user_scopes = admin_user.allowed_scopes.split(',') if admin_user.allowed_scopes != "*" else [] %}
-                                            {% set all_services = admin_user.allowed_scopes == "*" %}
-                                            
-                                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.9em;">
-                                                {% for service in available_services %}
-                                                <label class="service-label" data-service="{{ service.name }}">
-                                                    <input type="checkbox" name="service" value="{{ service.name }}"
-                                                           {% if service.name in user_scopes %}checked{% endif %}
-                                                           onchange="submitScopeForm('{{ admin_user.id }}')">
-                                                    <span>{{ service.display_name }}</span>
-                                                </label>
-                                                {% endfor %}
-                                            </div>
-                                        </form>
-                                    </div>
-                                </details>
+                                <div style="margin: 10px 0; padding: 10px; border: 1px solid #ddd; border-radius: 4px; background: #f9f9f9;">
+                                    <form id="scope-form-{{ admin_user.id }}" method="post" action="/auth/admin/set-user-scopes/{{ admin_user.id }}">
+                                        {% set user_scopes = admin_user.allowed_scopes.split(',') if admin_user.allowed_scopes != "*" else [] %}
+                                        {% set all_services = admin_user.allowed_scopes == "*" %}
+                                        
+                                        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; font-size: 0.9em;">
+                                            {% for service in available_services %}
+                                            <label class="service-label" data-service="{{ service.name }}">
+                                                <input type="checkbox" name="service" value="{{ service.name }}"
+                                                       {% if service.name in user_scopes %}checked{% endif %}
+                                                       onchange="submitScopeForm('{{ admin_user.id }}')">
+                                                <span>{{ service.display_name }}</span>
+                                            </label>
+                                            {% endfor %}
+                                        </div>
+                                    </form>
+                                </div>
                             </td>
                             <td>{{ admin_user.created_at.strftime('%d/%m/%Y') }}</td>
                             <td>
@@ -608,12 +599,7 @@
                                                         {% endif %}
                                                         <br>
                                                         <span style="color: #666; font-size: 0.65em;">
-                                                            🔧 Services:
-                                                            {% if key.scopes == "*" %}
-                                                                <strong style="color: #ffd700;">Tous les services</strong>
-                                                            {% else %}
-                                                                {{ key.scopes }}
-                                                            {% endif %}
+                                                            🔧 Services: {{ key.scopes }}
                                                         </span>
                                                         <br>
                                                         <span style="color: #999; font-size: 0.6em;">
