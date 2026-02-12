@@ -8,7 +8,7 @@ import os
 import secrets
 import re
 from datetime import datetime, timedelta
-from typing import Optional, List
+from typing import Optional, List, Tuple
 
 from fastapi import FastAPI, Header, HTTPException, Depends, status, Request, Form, Cookie
 from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
@@ -39,6 +39,67 @@ session_serializer = URLSafeTimedSerializer(SECRET_KEY)
 
 # Templates
 templates = Jinja2Templates(directory="/app/templates")
+
+# Service Configuration
+class ServiceConfig:
+    """Configuration centralisée des services"""
+    
+    # Services disponibles avec leurs métadonnées
+    SERVICES = {
+        "thebrain": {
+            "url": "https://thebrain.caronboulme.fr",
+            "display_name": "The Brain",
+            "priority": 1
+        },
+        "chatterbox": {
+            "url": "https://chatterbox.caronboulme.fr",
+            "display_name": "Chatterbox",
+            "priority": 2
+        },
+        "unmute-talk": {
+            "url": "https://unmute-talk.caronboulme.fr",
+            "display_name": "Unmute Talk",
+            "priority": 3
+        },
+        "unmute-transcript": {
+            "url": "https://unmute-transcript.caronboulme.fr",
+            "display_name": "Unmute Transcript",
+            "priority": 4
+        }
+    }
+    
+    @classmethod
+    def get_default_scopes(cls) -> List[str]:
+        """Retourne la liste des services par défaut pour un admin (scope '*')"""
+        return list(cls.SERVICES.keys())
+    
+    @classmethod
+    def get_service_priority(cls) -> List[Tuple[str, str]]:
+        """Retourne la liste des services triés par priorité (nom, url)"""
+        sorted_services = sorted(cls.SERVICES.items(), key=lambda x: x[1]["priority"])
+        return [(name, data["url"]) for name, data in sorted_services]
+    
+    @classmethod
+    def get_service_priority_with_names(cls) -> List[Tuple[str, str, str]]:
+        """Retourne la liste des services triés par priorité (nom, url, display_name)"""
+        sorted_services = sorted(cls.SERVICES.items(), key=lambda x: x[1]["priority"])
+        return [(name, data["url"], data["display_name"]) for name, data in sorted_services]
+    
+    @classmethod
+    def get_first_authorized_service(cls, user_scopes: List[str]) -> Tuple[Optional[str], Optional[str]]:
+        """Retourne le premier service autorisé selon la priorité (url, display_name)"""
+        for service_name, service_data in sorted(cls.SERVICES.items(), key=lambda x: x[1]["priority"]):
+            if service_name in user_scopes:
+                return service_data["url"], service_data["display_name"]
+        return None, None
+
+def parse_user_scopes(user) -> List[str]:
+    """Parse les scopes d'un utilisateur en liste"""
+    if user.allowed_scopes == "*":
+        return ServiceConfig.get_default_scopes()
+    elif user.allowed_scopes:
+        return [s.strip() for s in user.allowed_scopes.split(',') if s.strip()]
+    return []
 
 # Database Models
 class Base(DeclarativeBase):
@@ -264,8 +325,9 @@ async def root(request: Request, session_db: AsyncSession = Depends(get_session)
     if is_authenticated and user_name and user_name != "unknown":
         if is_from_www:
             # Only redirect to TheBrain if coming from www.caronboulme.fr
+            thebrain_url = ServiceConfig.SERVICES["thebrain"]["url"]
             print(f"🔍 ROOT DEBUG - Redirecting to TheBrain from www")
-            return RedirectResponse(url="https://thebrain.caronboulme.fr/", status_code=302)
+            return RedirectResponse(url=f"{thebrain_url}/", status_code=302)
         else:
             # From auth.caronboulme.fr or other domains, redirect to dashboard
             print(f"🔍 ROOT DEBUG - Redirecting to dashboard from auth/other")
@@ -340,31 +402,18 @@ async def login_submit(
     if redirect_after:
         response = RedirectResponse(url=redirect_after, status_code=303)
     else:
-        # Find first authorized service for this user (same logic as in /landing)
-        user_scopes = []
-        if user.allowed_scopes == "*":
-            user_scopes = ["thebrain", "chatterbox", "unmute-talk", "unmute-transcript"]
-        elif user.allowed_scopes:
-            user_scopes = [s.strip() for s in user.allowed_scopes.split(',') if s.strip()]
-        
+        # Find first authorized service for this user (refactored with ServiceConfig)
+        user_scopes = parse_user_scopes(user)
         print(f"🔍 LOGIN DEBUG - User {user.username} scopes: {user_scopes}")
         
-        # Priority order for redirection: thebrain > chatterbox > unmute-talk > unmute-transcript
-        service_priority = [
-            ("thebrain", "https://thebrain.caronboulme.fr"),
-            ("chatterbox", "https://chatterbox.caronboulme.fr"),
-            ("unmute-talk", "https://unmute-talk.caronboulme.fr"),
-            ("unmute-transcript", "https://unmute-transcript.caronboulme.fr")
-        ]
+        # Get first authorized service according to priority
+        redirect_url, service_name = ServiceConfig.get_first_authorized_service(user_scopes)
         
-        # Find first authorized service
-        redirect_url = "/auth/dashboard"  # Default fallback
-        for service_name, service_url in service_priority:
-            if service_name in user_scopes:
-                redirect_url = service_url
-                print(f"🔍 LOGIN DEBUG - Redirecting {user.username} to {service_name}: {service_url}")
-                break
+        if redirect_url:
+            print(f"🔍 LOGIN DEBUG - Redirecting {user.username} to {service_name}: {redirect_url}")
         else:
+            # No authorized services found, fallback to dashboard
+            redirect_url = "/auth/dashboard"
             print(f"🔍 LOGIN DEBUG - No authorized services for {user.username}, redirecting to dashboard")
         
         response = RedirectResponse(url=redirect_url, status_code=303)
@@ -523,12 +572,8 @@ async def dashboard(
                 'last_login': user.last_login
             })
     
-    # Parse user's allowed scopes for the API key creation form
-    user_allowed_scopes = []
-    if current_user.allowed_scopes == "*":
-        user_allowed_scopes = ["thebrain", "unmute-talk", "unmute-transcript", "chatterbox"]
-    elif current_user.allowed_scopes:
-        user_allowed_scopes = [s.strip() for s in current_user.allowed_scopes.split(',') if s.strip()]
+    # Parse user's allowed scopes for the API key creation form (refactored with ServiceConfig)
+    user_allowed_scopes = parse_user_scopes(current_user)
     
     return templates.TemplateResponse("dashboard.html", {
         "request": request,
@@ -1196,30 +1241,16 @@ async def landing_page(
                 user = user_result.scalar_one_or_none()
                 
                 if user:
-                    user_scopes = []
-                    if user.allowed_scopes == "*":
-                        user_scopes = ["thebrain", "chatterbox", "unmute-talk", "unmute-transcript"]
-                    elif user.allowed_scopes:
-                        user_scopes = [s.strip() for s in user.allowed_scopes.split(',') if s.strip()]
-                    
+                    user_scopes = parse_user_scopes(user)
                     print(f"🔍 LANDING DEBUG - User scopes: {user_scopes}")
                     
-                    # Priority order for redirection: thebrain > chatterbox > unmute-talk > unmute-transcript
-                    service_priority = [
-                        ("thebrain", "https://thebrain.caronboulme.fr", "The Brain"),
-                        ("chatterbox", "https://chatterbox.caronboulme.fr", "Chatterbox"),
-                        ("unmute-talk", "https://unmute-talk.caronboulme.fr", "Unmute Talk"),
-                        ("unmute-transcript", "https://unmute-transcript.caronboulme.fr", "Unmute Transcript")
-                    ]
+                    # Get first authorized service according to priority (refactored with ServiceConfig)
+                    redirect_url, display_name = ServiceConfig.get_first_authorized_service(user_scopes)
                     
-                    # Find first authorized service
-                    for service_name, service_url, display_name in service_priority:
-                        if service_name in user_scopes:
-                            redirect_url = service_url
-                            title = f"Welcome back, {user_name}!"
-                            message = f"Hello {user_name}, redirecting you to {display_name}..."
-                            print(f"🔍 LANDING DEBUG - Redirecting to {service_name}: {service_url}")
-                            break
+                    if redirect_url:
+                        title = f"Welcome back, {user_name}!"
+                        message = f"Hello {user_name}, redirecting you to {display_name}..."
+                        print(f"🔍 LANDING DEBUG - Redirecting to {display_name}: {redirect_url}")
                     else:
                         # No authorized services found, redirect to dashboard
                         redirect_url = "https://auth.caronboulme.fr/auth/dashboard"
@@ -1390,9 +1421,9 @@ async def landing_page(
                 
                 <div class="services">
                     <h3>Available Services</h3>
-                    <a href="https://thebrain.caronboulme.fr" class="service-link">🧠 The Brain</a>
-                    <a href="https://unmute-talk.caronboulme.fr" class="service-link">🎤 Unmute Talk</a>
-                    <a href="https://chatterbox.caronboulme.fr" class="service-link">💬 Chatterbox</a>
+                    <a href="{ServiceConfig.SERVICES["thebrain"]["url"]}" class="service-link">🧠 The Brain</a>
+                    <a href="{ServiceConfig.SERVICES["unmute-talk"]["url"]}" class="service-link">🎤 Unmute Talk</a>
+                    <a href="{ServiceConfig.SERVICES["chatterbox"]["url"]}" class="service-link">💬 Chatterbox</a>
                     <a href="https://photos.caronboulme.fr" class="service-link">📸 Photos</a>
                     
                     <br>
