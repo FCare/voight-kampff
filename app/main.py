@@ -18,7 +18,6 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy import String, DateTime, Boolean, Text, Integer, select, ForeignKey
-import hashlib
 import bcrypt
 from itsdangerous import URLSafeTimedSerializer
 import uvicorn
@@ -193,9 +192,6 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
     password_bytes = plain_password.encode('utf-8')
     hashed_bytes = hashed_password.encode('utf-8')
     return bcrypt.checkpw(password_bytes, hashed_bytes)
-
-def create_session_token() -> str:
-    return secrets.token_urlsafe(32)
 
 def get_client_ip(request: Request) -> str:
     """Extract client IP from request headers (considering proxies)"""
