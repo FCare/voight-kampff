@@ -7,6 +7,7 @@ Inspired by Blade Runner's empathy test
 import os
 import secrets
 import re
+import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Tuple
 
@@ -16,10 +17,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, DateTime, Boolean, Text, Integer, select, ForeignKey
+from sqlalchemy import String, DateTime, Boolean, Text, Integer, select, ForeignKey, and_
 import bcrypt
 from itsdangerous import URLSafeTimedSerializer
 import uvicorn
+
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Configuration
 DB_PATH = os.getenv("VK_DB_PATH", "/data/voight-kampff.db")
