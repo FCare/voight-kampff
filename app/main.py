@@ -460,7 +460,7 @@ async def login_submit(
     redirect_after: Optional[str] = Form(None),
     session_db: AsyncSession = Depends(get_session)
 ):
-    """Process login form"""
+    """Process login form - API version"""
     # Get user from database
     result = await session_db.execute(
         select(User).where(User.username == username)
@@ -468,15 +468,21 @@ async def login_submit(
     user = result.scalar_one_or_none()
     
     if not user or not verify_password(password, user.hashed_password):
-        raise HTTPException(
+        return JSONResponse(
             status_code=401,
-            detail="Nom d'utilisateur ou mot de passe incorrect"
+            content={
+                "success": False,
+                "error": "Nom d'utilisateur ou mot de passe incorrect"
+            }
         )
     
     if not user.is_active:
-        raise HTTPException(
+        return JSONResponse(
             status_code=403,
-            detail="Votre compte est en attente de validation par l'administrateur"
+            content={
+                "success": False,
+                "error": "Votre compte est en attente de validation par l'administrateur"
+            }
         )
     
     # Update last login
@@ -488,9 +494,9 @@ async def login_submit(
     user_agent = get_user_agent(request)
     session_token = serialize_session(user.id, client_ip, user_agent)
     
-    # Prepare response - redirect to first authorized service or dashboard
+    # Determine next URL
     if redirect_after:
-        response = RedirectResponse(url=redirect_after, status_code=303)
+        next_url = redirect_after
     else:
         # Find first authorized service for this user (refactored with ServiceConfig)
         user_scopes = parse_user_scopes(user)
@@ -501,12 +507,22 @@ async def login_submit(
         
         if redirect_url:
             print(f"🔍 LOGIN DEBUG - Redirecting {user.username} to {service_name}: {redirect_url}")
+            next_url = redirect_url
         else:
             # No authorized services found, fallback to dashboard
-            redirect_url = "/auth/dashboard"
+            next_url = "/auth/dashboard"
             print(f"🔍 LOGIN DEBUG - No authorized services for {user.username}, redirecting to dashboard")
-        
-        response = RedirectResponse(url=redirect_url, status_code=303)
+    
+    # Create JSON response
+    response = JSONResponse(content={
+        "success": True,
+        "message": "Connexion réussie",
+        "user": {
+            "username": user.username,
+            "is_admin": user.is_admin
+        },
+        "next_url": next_url
+    })
     
     # Set session cookie
     response.set_cookie(
