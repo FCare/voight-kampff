@@ -270,20 +270,6 @@ def should_rotate_session(session_data: dict) -> bool:
     
     return False
 
-async def rotate_session(request: Request, user_id: int, session_db: AsyncSession) -> str:
-    """Create a new session token and update database"""
-    current_ip = get_client_ip(request)
-    current_ua = get_user_agent(request)
-    
-    # Create new session token
-    new_token = serialize_session(user_id, current_ip, current_ua)
-    
-    # Update session in database if it exists
-    # Note: We're using cookie-based sessions, so no DB session to update directly
-    # But we could log the rotation for security monitoring
-    print(f"🔄 Session rotated for user {user_id} from IP {current_ip}")
-    
-    return new_token
 
 def is_session_suspicious(session_data: dict) -> bool:
     """Detect suspicious session activity"""
