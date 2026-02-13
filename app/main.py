@@ -139,6 +139,11 @@ class Session(Base):
     expires_at: Mapped[datetime] = mapped_column(DateTime)
     last_used: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     user_agent: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    ip_address: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)  # IPv6 max length
+    original_ip: Mapped[Optional[str]] = mapped_column(String(45), nullable=True)  # For change detection
+    last_rotation_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    rotation_count: Mapped[int] = mapped_column(Integer, default=0)
+    is_suspicious: Mapped[bool] = mapped_column(Boolean, default=False)
 
 class APIKey(Base):
     __tablename__ = "api_keys"
@@ -218,15 +223,121 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 def create_session_token() -> str:
     return secrets.token_urlsafe(32)
 
-def serialize_session(user_id: int) -> str:
-    return session_serializer.dumps({"user_id": user_id})
+def get_client_ip(request: Request) -> str:
+    """Extract client IP from request headers (considering proxies)"""
+    # Check for forwarded headers first (from proxies like Traefik)
+    forwarded_for = request.headers.get("x-forwarded-for")
+    if forwarded_for:
+        # Take the first IP in the chain (original client)
+        return forwarded_for.split(",")[0].strip()
+    
+    real_ip = request.headers.get("x-real-ip")
+    if real_ip:
+        return real_ip.strip()
+    
+    # Fallback to direct connection
+    return getattr(request.client, "host", "unknown") if request.client else "unknown"
 
-def deserialize_session(token: str) -> Optional[int]:
+def get_user_agent(request: Request) -> str:
+    """Extract User-Agent from request headers"""
+    return request.headers.get("user-agent", "unknown")[:500]  # Truncate to fit DB field
+
+def serialize_session(user_id: int, ip_address: str, user_agent: str) -> str:
+    """Create a session token with security context"""
+    session_data = {
+        "user_id": user_id,
+        "ip": ip_address,
+        "ua": user_agent[:100],  # Truncate for token size
+        "created": datetime.utcnow().timestamp()
+    }
+    return session_serializer.dumps(session_data)
+
+def deserialize_session(token: str, request: Request = None) -> Optional[dict]:
+    """Deserialize session token and validate security context"""
     try:
         data = session_serializer.loads(token, max_age=SESSION_EXPIRE_HOURS * 3600)
-        return data.get("user_id")
-    except:
+        
+        # If we have request context, validate IP and User-Agent
+        if request:
+            current_ip = get_client_ip(request)
+            current_ua = get_user_agent(request)
+            
+            # Check for IP changes (potential session hijacking)
+            if data.get("ip") != current_ip:
+                print(f"🚨 SECURITY ALERT - IP change detected: {data.get('ip')} → {current_ip}")
+                # Allow some flexibility for legitimate IP changes (mobile networks, etc.)
+                # But flag as suspicious
+                data["ip_changed"] = True
+                data["new_ip"] = current_ip
+            
+            # Check for User-Agent changes
+            stored_ua = data.get("ua", "")
+            if stored_ua and stored_ua != current_ua[:100]:
+                print(f"🚨 SECURITY ALERT - User-Agent change detected")
+                data["ua_changed"] = True
+                data["new_ua"] = current_ua[:100]
+        
+        return data
+    except Exception as e:
+        print(f"🔒 Session deserialization failed: {e}")
         return None
+
+def should_rotate_session(session_data: dict) -> bool:
+    """Determine if session should be rotated based on age and changes"""
+    if not session_data:
+        return True
+    
+    # Rotate if session is older than 6 hours
+    created_time = session_data.get("created", 0)
+    age_hours = (datetime.utcnow().timestamp() - created_time) / 3600
+    
+    if age_hours > 6:
+        return True
+    
+    # Rotate if IP or UA changed
+    if session_data.get("ip_changed") or session_data.get("ua_changed"):
+        return True
+    
+    return False
+
+async def rotate_session(request: Request, user_id: int, session_db: AsyncSession) -> str:
+    """Create a new session token and update database"""
+    current_ip = get_client_ip(request)
+    current_ua = get_user_agent(request)
+    
+    # Create new session token
+    new_token = serialize_session(user_id, current_ip, current_ua)
+    
+    # Update session in database if it exists
+    # Note: We're using cookie-based sessions, so no DB session to update directly
+    # But we could log the rotation for security monitoring
+    print(f"🔄 Session rotated for user {user_id} from IP {current_ip}")
+    
+    return new_token
+
+def is_session_suspicious(session_data: dict) -> bool:
+    """Detect suspicious session activity"""
+    if not session_data:
+        return True
+    
+    suspicion_score = 0
+    
+    # IP change adds suspicion
+    if session_data.get("ip_changed"):
+        suspicion_score += 30
+    
+    # User-Agent change adds suspicion
+    if session_data.get("ua_changed"):
+        suspicion_score += 20
+    
+    # Very old session is suspicious
+    created_time = session_data.get("created", 0)
+    age_hours = (datetime.utcnow().timestamp() - created_time) / 3600
+    if age_hours > 12:
+        suspicion_score += 25
+    
+    # Threshold for suspicion
+    return suspicion_score >= 50
 
 def validate_password(password: str) -> bool:
     """Validate password strength"""
@@ -241,20 +352,39 @@ def validate_password(password: str) -> bool:
     return True
 
 async def get_current_user(request: Request, session_db: AsyncSession = Depends(get_session)) -> Optional[User]:
-    """Get current user from session cookie"""
+    """Get current user from session cookie with enhanced security"""
     session_cookie = request.cookies.get("vk_session")
     if not session_cookie:
         return None
     
-    user_id = deserialize_session(session_cookie)
+    # Deserialize with security context validation
+    session_data = deserialize_session(session_cookie, request)
+    if not session_data:
+        return None
+    
+    user_id = session_data.get("user_id")
     if not user_id:
+        return None
+    
+    # Check if session is suspicious and should be terminated
+    if is_session_suspicious(session_data):
+        print(f"🚨 SUSPICIOUS SESSION - Auto-logout for user {user_id}")
+        # Return None to force re-authentication
         return None
     
     # Get user from database
     result = await session_db.execute(
         select(User).where(User.id == user_id, User.is_active == True)
     )
-    return result.scalar_one_or_none()
+    user = result.scalar_one_or_none()
+    
+    # Check if session should be rotated
+    if user and should_rotate_session(session_data):
+        print(f"🔄 Session rotation needed for user {user.username}")
+        # Note: We can't directly modify the response here in a dependency
+        # The rotation will be handled in the main endpoints where responses are created
+    
+    return user
 
 # FastAPI app
 app = FastAPI(
@@ -405,8 +535,10 @@ async def login_submit(
     user.last_login = datetime.utcnow()
     await session_db.commit()
     
-    # Create session
-    session_token = serialize_session(user.id)
+    # Create session with security context
+    client_ip = get_client_ip(request)
+    user_agent = get_user_agent(request)
+    session_token = serialize_session(user.id, client_ip, user_agent)
     
     # Prepare response - redirect to first authorized service or dashboard
     if redirect_after:
@@ -1029,14 +1161,26 @@ async def check_authentication(
         api_key = x_api_key.strip()
         print(f"🔍 AUTH DEBUG - Using X-API-Key header")
     
-    # Method 3: Try session cookie
+    # Method 3: Try session cookie with enhanced security
     elif request.cookies.get("vk_session"):
         session_cookie = request.cookies.get("vk_session")
-        print(f"🔍 AUTH DEBUG - Found session cookie, deserializing...")
-        user_id = deserialize_session(session_cookie)
-        print(f"🔍 AUTH DEBUG - Deserialized user_id: {user_id}")
+        print(f"🔍 AUTH DEBUG - Found session cookie, deserializing with security validation...")
+        session_data = deserialize_session(session_cookie, request)
+        print(f"🔍 AUTH DEBUG - Deserialized session data: {session_data}")
         
-        if user_id:
+        if session_data:
+            user_id = session_data.get("user_id")
+            
+            # Check for suspicious activity
+            if is_session_suspicious(session_data):
+                print(f"🚨 SECURITY ALERT - Suspicious session detected for user {user_id}, denying access")
+                return False, None, None
+            
+            # Check if session should be rotated
+            if should_rotate_session(session_data):
+                print(f"🔄 Session rotation recommended for user {user_id}")
+                # Note: Rotation will be handled at the response level
+            
             # Get user from database
             user_result = await session.execute(
                 select(User).where(User.id == user_id, User.is_active == True)
@@ -1047,6 +1191,12 @@ async def check_authentication(
             if user:
                 user_name = user.username
                 print(f"🔍 AUTH DEBUG - User found: {user_name}, allowed_scopes: {user.allowed_scopes}, is_admin: {user.is_admin}")
+                
+                # Log security context changes
+                if session_data.get("ip_changed"):
+                    print(f"🔍 AUTH DEBUG - IP change detected: {session_data.get('ip')} → {session_data.get('new_ip')}")
+                if session_data.get("ua_changed"):
+                    print(f"🔍 AUTH DEBUG - User-Agent change detected")
                 
                 # For session cookies, verify USER scopes (admin-controlled permissions)
                 if user.allowed_scopes is None or user.allowed_scopes.strip() == "":
@@ -1252,36 +1402,45 @@ async def landing_page(
         if is_from_www:
             # Get user from database to check their allowed scopes
             session_cookie = request.cookies.get("vk_session")
-            user_id = deserialize_session(session_cookie) if session_cookie else None
+            session_data = deserialize_session(session_cookie, request) if session_cookie else None
             
-            if user_id:
-                user_result = await session_db.execute(
-                    select(User).where(User.id == user_id, User.is_active == True)
-                )
-                user = user_result.scalar_one_or_none()
+            if session_data:
+                user_id = session_data.get("user_id")
                 
-                if user:
-                    user_scopes = parse_user_scopes(user)
-                    print(f"🔍 LANDING DEBUG - User scopes: {user_scopes}")
-                    
-                    # Get first authorized service according to priority (refactored with ServiceConfig)
-                    redirect_url, display_name = ServiceConfig.get_first_authorized_service(user_scopes)
-                    
-                    if redirect_url:
-                        title = f"Welcome back, {user_name}!"
-                        message = f"Hello {user_name}, redirecting you to {display_name}..."
-                        print(f"🔍 LANDING DEBUG - Redirecting to {display_name}: {redirect_url}")
-                    else:
-                        # No authorized services found, redirect to dashboard
-                        redirect_url = "https://auth.caronboulme.fr/auth/dashboard"
-                        title = f"Welcome back, {user_name}!"
-                        message = f"Hello {user_name}, no authorized services found. Redirecting to dashboard..."
-                        print(f"🔍 LANDING DEBUG - No authorized services, redirecting to dashboard")
-                else:
-                    # User not found, redirect to login
+                # Check for suspicious activity
+                if is_session_suspicious(session_data):
+                    print(f"🚨 LANDING DEBUG - Suspicious session detected, redirecting to login")
                     redirect_url = "https://auth.caronboulme.fr/auth/login"
-                    title = "Authentication Required"
-                    message = "Please login to access your services..."
+                    title = "Security Check Required"
+                    message = "Please login again for security verification..."
+                else:
+                    user_result = await session_db.execute(
+                        select(User).where(User.id == user_id, User.is_active == True)
+                    )
+                    user = user_result.scalar_one_or_none()
+                    
+                    if user:
+                        user_scopes = parse_user_scopes(user)
+                        print(f"🔍 LANDING DEBUG - User scopes: {user_scopes}")
+                        
+                        # Get first authorized service according to priority (refactored with ServiceConfig)
+                        redirect_url, display_name = ServiceConfig.get_first_authorized_service(user_scopes)
+                        
+                        if redirect_url:
+                            title = f"Welcome back, {user_name}!"
+                            message = f"Hello {user_name}, redirecting you to {display_name}..."
+                            print(f"🔍 LANDING DEBUG - Redirecting to {display_name}: {redirect_url}")
+                        else:
+                            # No authorized services found, redirect to dashboard
+                            redirect_url = "https://auth.caronboulme.fr/auth/dashboard"
+                            title = f"Welcome back, {user_name}!"
+                            message = f"Hello {user_name}, no authorized services found. Redirecting to dashboard..."
+                            print(f"🔍 LANDING DEBUG - No authorized services, redirecting to dashboard")
+                    else:
+                        # User not found, redirect to login
+                        redirect_url = "https://auth.caronboulme.fr/auth/login"
+                        title = "Authentication Required"
+                        message = "Please login to access your services..."
             else:
                 # No valid session, redirect to login
                 redirect_url = "https://auth.caronboulme.fr/auth/login"
