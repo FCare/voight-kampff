@@ -1376,6 +1376,66 @@ async def verify_api_key(
     )
 
 
+@app.post("/auth/session-api-key")
+async def get_session_api_key(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session_db: AsyncSession = Depends(get_session)
+):
+    """Génère ou récupère une API key temporaire liée à la session utilisateur pour WebSocket"""
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+    
+    try:
+        # Chercher une API key temporaire existante et encore valide
+        existing_key = await session_db.execute(
+            select(APIKey).where(
+                and_(
+                    APIKey.user_id == current_user.id,
+                    APIKey.name == "session_websocket",
+                    APIKey.expires_at > datetime.now(timezone.utc),
+                    APIKey.is_active == True
+                )
+            )
+        )
+        existing_key = existing_key.scalar_one_or_none()
+        
+        if existing_key:
+            logger.info(f"Returning existing WebSocket API key for user {current_user.username}")
+            return {
+                "api_key": existing_key.key_hash,
+                "expires_at": existing_key.expires_at,
+                "status": "existing"
+            }
+        
+        # Créer nouvelle API key temporaire (24h)
+        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+        api_key = secrets.token_urlsafe(32)
+        
+        new_key = APIKey(
+            user_id=current_user.id,
+            name="session_websocket",
+            key_hash=api_key,  # Note: En prod, hasher cette clé
+            scopes=current_user.scopes,
+            expires_at=expires_at,
+            is_active=True
+        )
+        
+        session_db.add(new_key)
+        await session_db.commit()
+        
+        logger.info(f"Created new WebSocket API key for user {current_user.username}, expires: {expires_at}")
+        return {
+            "api_key": api_key,
+            "expires_at": expires_at,
+            "status": "created"
+        }
+        
+    except Exception as e:
+        logger.error(f"Error getting session API key for user {current_user.username}: {e}")
+        raise HTTPException(status_code=500, detail="Erreur lors de la génération de l'API key")
+
+
 # ========== LANDING PAGE WITH CONDITIONAL REDIRECT ==========
 
 
