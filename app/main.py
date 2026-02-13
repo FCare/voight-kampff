@@ -552,15 +552,21 @@ async def register_submit(
     
     # Validation
     if password != password_confirm:
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail="Les mots de passe ne correspondent pas"
+            content={
+                "success": False,
+                "detail": "Les mots de passe ne correspondent pas"
+            }
         )
     
     if not validate_password(password):
-        raise HTTPException(
+        return JSONResponse(
             status_code=400,
-            detail="Le mot de passe ne respecte pas les exigences de sécurité"
+            content={
+                "success": False,
+                "detail": "Le mot de passe ne respecte pas les exigences de sécurité"
+            }
         )
     
     # Check if user exists
@@ -570,9 +576,12 @@ async def register_submit(
         )
     )
     if result.scalar_one_or_none():
-        raise HTTPException(
+        return JSONResponse(
             status_code=409,
-            detail="Ce nom d'utilisateur ou email est déjà utilisé"
+            content={
+                "success": False,
+                "detail": "Ce nom d'utilisateur ou email est déjà utilisé"
+            }
         )
     
     # Create user (inactive until admin validation)
@@ -586,11 +595,12 @@ async def register_submit(
     await session_db.commit()
     await session_db.refresh(user)
     
-    # Redirect to login with pending validation message
-    return RedirectResponse(
-        url="/auth/login?pending_validation=true",
-        status_code=303
-    )
+    # Return JSON response for API usage
+    return JSONResponse(content={
+        "success": True,
+        "message": "Inscription réussie ! Votre compte est en attente de validation par l'administrateur.",
+        "pending_validation": True
+    })
 
 @app.get("/auth/dashboard")
 async def dashboard_api(
