@@ -1397,8 +1397,8 @@ async def get_session_api_key(
             select(APIKey).where(
                 and_(
                     APIKey.user_id == current_user.id,
-                    APIKey.name == "session_websocket",
-                    APIKey.expires_at > datetime.now(timezone.utc),
+                    APIKey.key_name == "session_websocket",
+                    APIKey.expires_at > datetime.utcnow(),
                     APIKey.is_active == True
                 )
             )
@@ -1408,20 +1408,21 @@ async def get_session_api_key(
         if existing_key:
             logger.info(f"Returning existing WebSocket API key for user {current_user.username}")
             return {
-                "api_key": existing_key.key_hash,
+                "api_key": existing_key.api_key,
                 "expires_at": existing_key.expires_at,
                 "status": "existing"
             }
         
         # Créer nouvelle API key temporaire (24h)
-        expires_at = datetime.now(timezone.utc) + timedelta(hours=24)
+        expires_at = datetime.utcnow() + timedelta(hours=24)
         api_key = secrets.token_urlsafe(32)
         
         new_key = APIKey(
             user_id=current_user.id,
-            name="session_websocket",
-            key_hash=api_key,  # Note: En prod, hasher cette clé
-            scopes=current_user.scopes,
+            user=current_user.username,  # Pour compatibilité
+            key_name="session_websocket",
+            api_key=api_key,  # Note: En prod, hasher cette clé
+            scopes=current_user.allowed_scopes,
             expires_at=expires_at,
             is_active=True
         )
