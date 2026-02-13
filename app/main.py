@@ -11,9 +11,8 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Tuple
 
 from fastapi import FastAPI, Header, HTTPException, Depends, status, Request, Form, Cookie
-from fastapi.responses import JSONResponse, HTMLResponse, RedirectResponse
-from fastapi.templating import Jinja2Templates
-from fastapi.staticfiles import StaticFiles
+from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -35,9 +34,6 @@ ADMIN_EMAIL = os.getenv("VK_ADMIN_EMAIL", "admin@localhost")
 
 # Security
 session_serializer = URLSafeTimedSerializer(SECRET_KEY)
-
-# Templates
-templates = Jinja2Templates(directory="/app/templates")
 
 # Service Configuration
 class ServiceConfig:
@@ -349,6 +345,22 @@ app = FastAPI(
     version="2.0.0"
 )
 
+# Configure CORS for cross-domain requests from Joshua frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://assistant.caronboulme.fr",
+        "https://joshua.caronboulme.fr",
+        "http://localhost:3000",
+        "http://localhost:8000",
+        "http://127.0.0.1:3000",
+        "http://127.0.0.1:8000"
+    ],
+    allow_credentials=True,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["*"],
+)
+
 async def create_admin_if_needed():
     """Create admin user if environment variables are set and no admin exists"""
     if not ADMIN_USERNAME or not ADMIN_PASSWORD:
@@ -439,24 +451,6 @@ async def health():
 
 # ========== WEB AUTHENTICATION ENDPOINTS ==========
 
-@app.get("/auth/login", response_class=HTMLResponse)
-async def login_page(
-    request: Request,
-    redirect: Optional[str] = None,
-    error: Optional[str] = None,
-    pending_validation: Optional[str] = None
-):
-    """Login page"""
-    success_message = None
-    if pending_validation:
-        success_message = "Inscription réussie ! Votre compte est en attente de validation par l'administrateur."
-    
-    return templates.TemplateResponse("login.html", {
-        "request": request,
-        "redirect_after": redirect,
-        "error": error,
-        "success": success_message
-    })
 
 @app.post("/auth/login")
 async def login_submit(
@@ -474,18 +468,16 @@ async def login_submit(
     user = result.scalar_one_or_none()
     
     if not user or not verify_password(password, user.hashed_password):
-        return templates.TemplateResponse("login.html", {
-            "request": request,
-            "redirect_after": redirect_after,
-            "error": "Nom d'utilisateur ou mot de passe incorrect"
-        })
+        raise HTTPException(
+            status_code=401,
+            detail="Nom d'utilisateur ou mot de passe incorrect"
+        )
     
     if not user.is_active:
-        return templates.TemplateResponse("login.html", {
-            "request": request,
-            "redirect_after": redirect_after,
-            "error": "Votre compte est en attente de validation par l'administrateur"
-        })
+        raise HTTPException(
+            status_code=403,
+            detail="Votre compte est en attente de validation par l'administrateur"
+        )
     
     # Update last login
     user.last_login = datetime.utcnow()
@@ -529,14 +521,6 @@ async def login_submit(
     
     return response
 
-@app.get("/auth/register", response_class=HTMLResponse)
-async def register_page(request: Request, redirect: Optional[str] = None, error: Optional[str] = None):
-    """Registration page"""
-    return templates.TemplateResponse("register.html", {
-        "request": request,
-        "redirect_after": redirect,
-        "error": error
-    })
 
 @app.post("/auth/register")
 async def register_submit(
@@ -552,18 +536,16 @@ async def register_submit(
     
     # Validation
     if password != password_confirm:
-        return templates.TemplateResponse("register.html", {
-            "request": request,
-            "redirect_after": redirect_after,
-            "error": "Les mots de passe ne correspondent pas"
-        })
+        raise HTTPException(
+            status_code=400,
+            detail="Les mots de passe ne correspondent pas"
+        )
     
     if not validate_password(password):
-        return templates.TemplateResponse("register.html", {
-            "request": request,
-            "redirect_after": redirect_after,
-            "error": "Le mot de passe ne respecte pas les exigences de sécurité"
-        })
+        raise HTTPException(
+            status_code=400,
+            detail="Le mot de passe ne respecte pas les exigences de sécurité"
+        )
     
     # Check if user exists
     result = await session_db.execute(
@@ -572,11 +554,10 @@ async def register_submit(
         )
     )
     if result.scalar_one_or_none():
-        return templates.TemplateResponse("register.html", {
-            "request": request,
-            "redirect_after": redirect_after,
-            "error": "Ce nom d'utilisateur ou email est déjà utilisé"
-        })
+        raise HTTPException(
+            status_code=409,
+            detail="Ce nom d'utilisateur ou email est déjà utilisé"
+        )
     
     # Create user (inactive until admin validation)
     user = User(
@@ -595,17 +576,14 @@ async def register_submit(
         status_code=303
     )
 
-@app.get("/auth/dashboard", response_class=HTMLResponse)
-async def dashboard(
-    request: Request,
+@app.get("/auth/dashboard")
+async def dashboard_api(
     current_user: User = Depends(get_current_user),
-    session_db: AsyncSession = Depends(get_session),
-    success: Optional[str] = None,
-    error: Optional[str] = None
+    session_db: AsyncSession = Depends(get_session)
 ):
-    """Dashboard page"""
+    """Dashboard API - Returns JSON data for Joshua frontend"""
     if not current_user:
-        return RedirectResponse(url=f"/auth/login?redirect={request.url}", status_code=303)
+        raise HTTPException(status_code=401, detail="Authentication required")
     
     # Get user's API keys
     result = await session_db.execute(
@@ -622,9 +600,9 @@ async def dashboard(
             'api_key': key.api_key,
             'scopes': [s.strip() for s in key.scopes.split(',')],
             'is_active': key.is_active,
-            'created_at': key.created_at,
-            'last_used': key.last_used,
-            'expires_at': key.expires_at
+            'created_at': key.created_at.isoformat() if key.created_at else None,
+            'last_used': key.last_used.isoformat() if key.last_used else None,
+            'expires_at': key.expires_at.isoformat() if key.expires_at else None
         })
     
     # Admin data if user is admin
@@ -651,9 +629,9 @@ async def dashboard(
                     'api_key': key.api_key,
                     'scopes': [s.strip() for s in key.scopes.split(',')],
                     'is_active': key.is_active,
-                    'created_at': key.created_at,
-                    'last_used': key.last_used,
-                    'expires_at': key.expires_at
+                    'created_at': key.created_at.isoformat() if key.created_at else None,
+                    'last_used': key.last_used.isoformat() if key.last_used else None,
+                    'expires_at': key.expires_at.isoformat() if key.expires_at else None
                 })
             
             admin_users.append({
@@ -666,14 +644,14 @@ async def dashboard(
                 'allowed_scopes': user.allowed_scopes,
                 'api_key_count': len(user_api_keys),
                 'api_keys': formatted_api_keys,
-                'created_at': user.created_at,
-                'last_login': user.last_login
+                'created_at': user.created_at.isoformat() if user.created_at else None,
+                'last_login': user.last_login.isoformat() if user.last_login else None
             })
     
-    # Parse user's allowed scopes for the API key creation form (refactored with ServiceConfig)
+    # Parse user's allowed scopes for the API key creation form
     user_allowed_scopes = parse_user_scopes(current_user)
     
-    # Get all available services sorted by priority for dynamic template
+    # Get all available services sorted by priority
     available_services = []
     for service_name, service_data in sorted(ServiceConfig.SERVICES.items(), key=lambda x: x[1]["priority"]):
         available_services.append({
@@ -682,8 +660,7 @@ async def dashboard(
             'priority': service_data['priority']
         })
     
-    return templates.TemplateResponse("dashboard.html", {
-        "request": request,
+    return JSONResponse(content={
         "user": current_user.username,
         "is_admin": current_user.is_admin,
         "max_api_keys": current_user.max_api_keys,
@@ -691,9 +668,7 @@ async def dashboard(
         "api_keys": api_keys_formatted,
         "admin_users": admin_users,
         "user_allowed_scopes": user_allowed_scopes,
-        "available_services": available_services,
-        "success": success,
-        "error": error
+        "available_services": available_services
     })
 
 @app.get("/auth/admin/traefik")
@@ -1326,253 +1301,6 @@ async def verify_api_key(
 
 # ========== LANDING PAGE WITH CONDITIONAL REDIRECT ==========
 
-@app.get("/landing", response_class=HTMLResponse)
-async def landing_page(
-    request: Request,
-    session_db: AsyncSession = Depends(get_session)
-):
-    """
-    Landing page that redirects based on authentication status and source domain
-    - From www.caronboulme.fr + authenticated: Redirect to thebrain.caronboulme.fr
-    - From auth.caronboulme.fr + authenticated: Redirect to dashboard
-    - Not authenticated: Redirect to auth.caronboulme.fr/auth/login
-    """
-    
-    print(f"🔍 LANDING DEBUG - Starting landing page authentication check")
-    print(f"🔍 LANDING DEBUG - Session cookie present: {'yes' if request.cookies.get('vk_session') else 'no'}")
-    print(f"🔍 LANDING DEBUG - Host header: {request.headers.get('host')}")
-    
-    # Check authentication (no specific service required for landing)
-    is_authenticated, user_name, _ = await check_authentication(
-        request, session_db, "*"
-    )
-    
-    print(f"🔍 LANDING DEBUG - Authentication result: is_authenticated={is_authenticated}, user_name={user_name}")
-    
-    # Get the host to determine source domain
-    host = request.headers.get('host', '')
-    is_from_www = host.startswith('www.caronboulme.fr')
-    print(f"🔍 LANDING DEBUG - Is from www.caronboulme.fr: {is_from_www}")
-    
-    if is_authenticated:
-        if is_from_www:
-            # Get user from database to check their allowed scopes
-            session_cookie = request.cookies.get("vk_session")
-            session_data = deserialize_session(session_cookie, request) if session_cookie else None
-            
-            if session_data:
-                user_id = session_data.get("user_id")
-                
-                # Check for suspicious activity
-                if is_session_suspicious(session_data):
-                    print(f"🚨 LANDING DEBUG - Suspicious session detected, redirecting to login")
-                    redirect_url = "https://auth.caronboulme.fr/auth/login"
-                    title = "Security Check Required"
-                    message = "Please login again for security verification..."
-                else:
-                    user_result = await session_db.execute(
-                        select(User).where(User.id == user_id, User.is_active == True)
-                    )
-                    user = user_result.scalar_one_or_none()
-                    
-                    if user:
-                        user_scopes = parse_user_scopes(user)
-                        print(f"🔍 LANDING DEBUG - User scopes: {user_scopes}")
-                        
-                        # Get first authorized service according to priority (refactored with ServiceConfig)
-                        redirect_url, display_name = ServiceConfig.get_first_authorized_service(user_scopes)
-                        
-                        if redirect_url:
-                            title = f"Welcome back, {user_name}!"
-                            message = f"Hello {user_name}, redirecting you to {display_name}..."
-                            print(f"🔍 LANDING DEBUG - Redirecting to {display_name}: {redirect_url}")
-                        else:
-                            # No authorized services found, redirect to dashboard
-                            redirect_url = "https://auth.caronboulme.fr/auth/dashboard"
-                            title = f"Welcome back, {user_name}!"
-                            message = f"Hello {user_name}, no authorized services found. Redirecting to dashboard..."
-                            print(f"🔍 LANDING DEBUG - No authorized services, redirecting to dashboard")
-                    else:
-                        # User not found, redirect to login
-                        redirect_url = "https://auth.caronboulme.fr/auth/login"
-                        title = "Authentication Required"
-                        message = "Please login to access your services..."
-            else:
-                # No valid session, redirect to login
-                redirect_url = "https://auth.caronboulme.fr/auth/login"
-                title = "Authentication Required"
-                message = "Please login to access your services..."
-        else:
-            # From auth.caronboulme.fr or other domains, show landing page without redirect
-            redirect_url = None  # No automatic redirect
-            title = f"Welcome back, {user_name}!"
-            message = f"Hello {user_name}, you are successfully authenticated!"
-    else:
-        redirect_url = "https://auth.caronboulme.fr/auth/login"
-        title = "Authentication Required"
-        message = "Please login to access your services..."
-    
-    # Generate different HTML based on whether we have a redirect_url
-    if redirect_url:
-        html_content = f"""
-        <!DOCTYPE html>
-        <html lang="fr">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>{title}</title>
-            <meta http-equiv="refresh" content="2;url={redirect_url}">
-            <style>
-                body {{
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-                    color: #fff;
-                    min-height: 100vh;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin: 0;
-                }}
-                .container {{
-                    text-align: center;
-                    background: rgba(255, 255, 255, 0.1);
-                    backdrop-filter: blur(10px);
-                    border-radius: 20px;
-                    padding: 40px;
-                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-                    border: 1px solid rgba(255, 255, 255, 0.2);
-                }}
-                .logo {{
-                    font-size: 3em;
-                    margin-bottom: 20px;
-                }}
-                .spinner {{
-                    border: 3px solid rgba(255, 255, 255, 0.3);
-                    border-top: 3px solid #4ecdc4;
-                    border-radius: 50%;
-                    width: 40px;
-                    height: 40px;
-                    animation: spin 1s linear infinite;
-                    margin: 20px auto;
-                }}
-                @keyframes spin {{
-                    0% {{ transform: rotate(0deg); }}
-                    100% {{ transform: rotate(360deg); }}
-                }}
-                a {{
-                    color: #4ecdc4;
-                    text-decoration: none;
-                    font-weight: 500;
-                }}
-                a:hover {{
-                    text-decoration: underline;
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="logo">🔍</div>
-                <h1>{title}</h1>
-                <p>{message}</p>
-                <div class="spinner"></div>
-                <p><a href="{redirect_url}">Click here if you are not redirected automatically</a></p>
-            </div>
-            <script>
-                setTimeout(function() {{
-                    window.location.href = "{redirect_url}";
-                }}, 2000);
-            </script>
-        </body>
-        </html>
-        """
-    else:
-        # No redirect - show static landing page
-        html_content = f"""
-        <!DOCTYPE html>
-        <html lang="fr">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>{title}</title>
-            <style>
-                body {{
-                    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-                    background: linear-gradient(135deg, #1e3c72 0%, #2a5298 100%);
-                    color: #fff;
-                    min-height: 100vh;
-                    display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    margin: 0;
-                }}
-                .container {{
-                    text-align: center;
-                    background: rgba(255, 255, 255, 0.1);
-                    backdrop-filter: blur(10px);
-                    border-radius: 20px;
-                    padding: 40px;
-                    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-                    border: 1px solid rgba(255, 255, 255, 0.2);
-                    max-width: 500px;
-                }}
-                .logo {{
-                    font-size: 3em;
-                    margin-bottom: 20px;
-                }}
-                .services {{
-                    margin-top: 30px;
-                }}
-                .service-link {{
-                    display: inline-block;
-                    background: rgba(78, 205, 196, 0.2);
-                    color: #4ecdc4;
-                    padding: 10px 20px;
-                    margin: 10px;
-                    border-radius: 10px;
-                    text-decoration: none;
-                    font-weight: 500;
-                    border: 1px solid rgba(78, 205, 196, 0.3);
-                    transition: all 0.3s ease;
-                }}
-                .service-link:hover {{
-                    background: rgba(78, 205, 196, 0.3);
-                    transform: translateY(-2px);
-                }}
-                .dashboard-link {{
-                    background: rgba(255, 255, 255, 0.2);
-                    color: #fff;
-                    margin-top: 20px;
-                }}
-                .dashboard-link:hover {{
-                    background: rgba(255, 255, 255, 0.3);
-                }}
-            </style>
-        </head>
-        <body>
-            <div class="container">
-                <div class="logo">🔍</div>
-                <h1>{title}</h1>
-                <p>{message}</p>
-                
-                <div class="services">
-                    <h3>Available Services</h3>
-                    <a href="{ServiceConfig.SERVICES["assistant"]["url"]}" class="service-link">🤖 Joshua Assistant</a>
-                    <a href="{ServiceConfig.SERVICES["thebrain"]["url"]}" class="service-link">🧠 The Brain</a>
-                    <a href="{ServiceConfig.SERVICES["chatterbox"]["url"]}" class="service-link">💬 Chatterbox</a>
-                    <a href="{ServiceConfig.SERVICES["unmute-talk"]["url"]}" class="service-link">🎤 Unmute Talk</a>
-                    <a href="{ServiceConfig.SERVICES["unmute-transcript"]["url"]}" class="service-link">📝 Unmute Transcript</a>
-                    <a href="{ServiceConfig.SERVICES["joshua"]["url"]}" class="service-link">🔧 Joshua API</a>
-                    <a href="https://photos.caronboulme.fr" class="service-link">📸 Photos</a>
-                    
-                    <br>
-                    <a href="/auth/dashboard" class="service-link dashboard-link">⚙️ Account Dashboard</a>
-                </div>
-            </div>
-        </body>
-        </html>
-        """
-    
-    return HTMLResponse(content=html_content, status_code=200)
 
 # ========== APPLICATION STARTUP ==========
 
