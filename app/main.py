@@ -1210,8 +1210,10 @@ async def check_authentication(
                     user_allowed_scopes = []
                     print(f"🔍 AUTH DEBUG - No scopes defined for user")
                 else:
-                    user_allowed_scopes = [s.strip() for s in user.allowed_scopes.split(',') if s.strip()]
-                    print(f"🔍 AUTH DEBUG - User allowed scopes: {user_allowed_scopes}")
+                    base_scopes = [s.strip() for s in user.allowed_scopes.split(',') if s.strip()]
+                    user_allowed_scopes = ServiceConfig.expand_meta_services(base_scopes)
+                    print(f"🔍 AUTH DEBUG - User base scopes: {base_scopes}")
+                    print(f"🔍 AUTH DEBUG - User expanded scopes: {user_allowed_scopes}")
                 
                 # Admin users automatically get traefik access
                 if user.is_admin and 'traefik' not in user_allowed_scopes:
