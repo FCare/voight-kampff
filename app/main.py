@@ -41,10 +41,26 @@ class ServiceConfig:
     
     # Services disponibles avec leurs métadonnées
     SERVICES = {
+        "joshua-meta": {
+            "url": "https://assistant.caronboulme.fr",  # URL principal vers l'assistant
+            "display_name": "Joshua",
+            "priority": 1,
+            "is_meta": True,
+            "sub_services": ["assistant", "joshua-api"]
+        },
         "assistant": {
             "url": "https://assistant.caronboulme.fr",
             "display_name": "Joshua Assistant",
-            "priority": 1
+            "priority": 1,
+            "is_hidden": True,  # Masqué dans l'interface utilisateur
+            "parent_meta": "joshua-meta"
+        },
+        "joshua-api": {
+            "url": "https://joshua.caronboulme.fr",
+            "display_name": "Joshua API",
+            "priority": 1,
+            "is_hidden": True,  # Masqué dans l'interface utilisateur
+            "parent_meta": "joshua-meta"
         },
         "thebrain": {
             "url": "https://thebrain.caronboulme.fr",
@@ -65,18 +81,23 @@ class ServiceConfig:
             "url": "https://unmute-transcript.caronboulme.fr",
             "display_name": "Unmute Transcript",
             "priority": 5
-        },
-        "joshua": {
-            "url": "https://joshua.caronboulme.fr",
-            "display_name": "Joshua API",
-            "priority": 6
         }
     }
     
     @classmethod
     def get_default_scopes(cls) -> List[str]:
         """Retourne la liste des services par défaut pour un admin (scope '*')"""
+        # Pour les admins, on inclut tous les services (méta et normaux)
         return list(cls.SERVICES.keys())
+    
+    @classmethod
+    def get_visible_services(cls) -> List[Tuple[str, str, str]]:
+        """Retourne la liste des services visibles (non masqués) triés par priorité"""
+        visible_services = []
+        for name, data in cls.SERVICES.items():
+            if not data.get("is_hidden", False):
+                visible_services.append((name, data["url"], data["display_name"]))
+        return sorted(visible_services, key=lambda x: cls.SERVICES[x[0]]["priority"])
     
     @classmethod
     def get_service_priority(cls) -> List[Tuple[str, str]]:
@@ -91,19 +112,46 @@ class ServiceConfig:
         return [(name, data["url"], data["display_name"]) for name, data in sorted_services]
     
     @classmethod
+    def expand_meta_services(cls, user_scopes: List[str]) -> List[str]:
+        """Expanse les méta-services vers leurs sous-services"""
+        expanded_scopes = set()
+        
+        for scope in user_scopes:
+            if scope in cls.SERVICES:
+                service = cls.SERVICES[scope]
+                if service.get("is_meta", False):
+                    # C'est un méta-service, ajouter ses sous-services
+                    sub_services = service.get("sub_services", [])
+                    expanded_scopes.update(sub_services)
+                else:
+                    # Service normal
+                    expanded_scopes.add(scope)
+            else:
+                # Scope inconnu, on le garde tel quel
+                expanded_scopes.add(scope)
+                
+        return list(expanded_scopes)
+    
+    @classmethod
     def get_first_authorized_service(cls, user_scopes: List[str]) -> Tuple[Optional[str], Optional[str]]:
         """Retourne le premier service autorisé selon la priorité (url, display_name)"""
+        # Expanse les méta-services vers les sous-services réels
+        expanded_scopes = cls.expand_meta_services(user_scopes)
+        
         for service_name, service_data in sorted(cls.SERVICES.items(), key=lambda x: x[1]["priority"]):
-            if service_name in user_scopes:
+            if service_name in expanded_scopes:
                 return service_data["url"], service_data["display_name"]
         return None, None
 
 def parse_user_scopes(user) -> List[str]:
-    """Parse les scopes d'un utilisateur en liste"""
+    """Parse les scopes d'un utilisateur en liste et expanse les méta-services"""
     if user.allowed_scopes == "*":
+        # Pour les admins, retourner tous les services (y compris méta)
         return ServiceConfig.get_default_scopes()
     elif user.allowed_scopes:
-        return [s.strip() for s in user.allowed_scopes.split(',') if s.strip()]
+        base_scopes = [s.strip() for s in user.allowed_scopes.split(',') if s.strip()]
+        # Expanse les méta-services vers leurs sous-services
+        return ServiceConfig.expand_meta_services(base_scopes)
     return []
 
 # Database Models
@@ -677,12 +725,13 @@ async def dashboard_api(
     # Parse user's allowed scopes for the API key creation form
     user_allowed_scopes = parse_user_scopes(current_user)
     
-    # Get all available services sorted by priority
+    # Get all visible services (excludes hidden sub-services)
     available_services = []
-    for service_name, service_data in sorted(ServiceConfig.SERVICES.items(), key=lambda x: x[1]["priority"]):
+    for service_name, service_url, display_name in ServiceConfig.get_visible_services():
+        service_data = ServiceConfig.SERVICES[service_name]
         available_services.append({
             'name': service_name,
-            'display_name': service_data['display_name'],
+            'display_name': display_name,
             'priority': service_data['priority']
         })
     
