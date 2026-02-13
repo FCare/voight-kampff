@@ -46,7 +46,7 @@ class ServiceConfig:
             "display_name": "Joshua",
             "priority": 1,
             "is_meta": True,
-            "sub_services": ["assistant", "joshua-api"]
+            "sub_services": ["assistant", "joshua"]
         },
         "assistant": {
             "url": "https://assistant.caronboulme.fr",
@@ -55,7 +55,7 @@ class ServiceConfig:
             "is_hidden": True,  # Masqué dans l'interface utilisateur
             "parent_meta": "joshua-meta"
         },
-        "joshua-api": {
+        "joshua": {
             "url": "https://joshua.caronboulme.fr",
             "display_name": "Joshua API",
             "priority": 1,
