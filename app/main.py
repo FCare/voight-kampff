@@ -17,7 +17,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
-from sqlalchemy import String, DateTime, Boolean, Text, Integer, select, ForeignKey, and_
+from sqlalchemy import String, DateTime, Boolean, Text, Integer, select, ForeignKey, and_, or_
 import bcrypt
 from itsdangerous import URLSafeTimedSerializer
 import uvicorn
