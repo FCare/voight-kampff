@@ -1413,6 +1413,28 @@ async def get_session_api_key(
                 "status": "existing"
             }
         
+        # Supprimer les anciennes clés expirées ou inactives pour éviter les conflits UNIQUE
+        expired_keys = await session_db.execute(
+            select(APIKey).where(
+                and_(
+                    APIKey.user_id == current_user.id,
+                    APIKey.key_name == "session_websocket",
+                    or_(
+                        APIKey.expires_at <= datetime.utcnow(),
+                        APIKey.is_active == False
+                    )
+                )
+            )
+        )
+        expired_keys_list = expired_keys.scalars().all()
+        
+        for expired_key in expired_keys_list:
+            logger.info(f"Deleting expired/inactive session key for user {current_user.username}")
+            await session_db.delete(expired_key)
+        
+        if expired_keys_list:
+            await session_db.commit()
+        
         # Créer nouvelle API key temporaire (24h)
         expires_at = datetime.utcnow() + timedelta(hours=24)
         api_key = secrets.token_urlsafe(32)
