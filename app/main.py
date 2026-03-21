@@ -413,6 +413,7 @@ templates = Jinja2Templates(directory="app/templates")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
+        "https://auth.caronboulme.fr",
         "https://assistant.caronboulme.fr",
         "https://joshua.caronboulme.fr",
         "https://liste.caronboulme.fr",
