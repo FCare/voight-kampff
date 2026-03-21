@@ -334,6 +334,9 @@
                 
                 if (serviceName && redirectUrl) {
                     this.showServiceInfo(serviceName, redirectUrl);
+                    // Store in sessionStorage for dashboard use
+                    sessionStorage.setItem('auth_return_url', redirectUrl);
+                    sessionStorage.setItem('auth_service_name', serviceName);
                 }
             }
 

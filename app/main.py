@@ -89,9 +89,9 @@ class ServiceConfig:
             "display_name": "Unmute Transcript",
             "priority": 5
         },
-        "alfred": {
+        "todo-list": {
             "url": "https://liste.caronboulme.fr",
-            "display_name": "Alfred",
+            "display_name": "ToDo List",
             "priority": 6
         }
     }

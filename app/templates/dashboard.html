@@ -358,12 +358,12 @@
             </h1>
             <div class="user-info">
                 <span>Connecté en tant que <strong id="username">Chargement...</strong></span>
-                <a href="https://assistant.caronboulme.fr/" class="btn btn-secondary">
+                <a href="#" id="return-button" class="btn btn-secondary">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                         <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
                         <polyline points="9,22 9,12 15,12 15,22"/>
                     </svg>
-                    Retour à Joshua
+                    <span id="return-text">Retour au service</span>
                 </a>
                 <button id="logout-btn" class="btn btn-danger">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -472,8 +472,73 @@
             this.apiBaseUrl = window.location.origin; // Voight-Kampff URL
             this.userData = null;
             this.availableServices = [];
+            this.returnUrl = null;
+            this.serviceName = null;
             
+            this.detectReturnService();
             this.init();
+        }
+
+        detectReturnService() {
+            // Check URL parameters first (from redirect_after)
+            const urlParams = new URLSearchParams(window.location.search);
+            const redirectAfter = urlParams.get('redirect_after');
+            const serviceName = urlParams.get('service_name');
+            
+            // Check session storage (set during login)
+            const storedReturnUrl = sessionStorage.getItem('auth_return_url');
+            const storedServiceName = sessionStorage.getItem('auth_service_name');
+            
+            // Check document referrer as fallback
+            const referrer = document.referrer;
+            
+            // Priority: URL params > session storage > referrer
+            if (redirectAfter) {
+                this.returnUrl = redirectAfter;
+                this.serviceName = serviceName || this.getServiceNameFromUrl(redirectAfter);
+            } else if (storedReturnUrl) {
+                this.returnUrl = storedReturnUrl;
+                this.serviceName = storedServiceName || this.getServiceNameFromUrl(storedReturnUrl);
+            } else if (referrer && referrer !== window.location.href) {
+                this.returnUrl = referrer;
+                this.serviceName = this.getServiceNameFromUrl(referrer);
+            } else {
+                // Default fallback to Joshua
+                this.returnUrl = 'https://assistant.caronboulme.fr/';
+                this.serviceName = 'Joshua';
+            }
+            
+            this.updateReturnButton();
+        }
+
+        getServiceNameFromUrl(url) {
+            try {
+                const hostname = new URL(url).hostname;
+                
+                // Map known hostnames to service names
+                const serviceMap = {
+                    'assistant.caronboulme.fr': 'Joshua Assistant',
+                    'liste.caronboulme.fr': 'ToDo List',
+                    'chatterbox.caronboulme.fr': 'Chatterbox',
+                    'thebrain.caronboulme.fr': 'The Brain',
+                    'unmute-talk.caronboulme.fr': 'Unmute Talk',
+                    'unmute-transcript.caronboulme.fr': 'Unmute Transcript'
+                };
+                
+                return serviceMap[hostname] || hostname.split('.')[0];
+            } catch (e) {
+                return 'Service';
+            }
+        }
+
+        updateReturnButton() {
+            const returnButton = document.getElementById('return-button');
+            const returnText = document.getElementById('return-text');
+            
+            if (returnButton && returnText) {
+                returnButton.href = this.returnUrl;
+                returnText.textContent = `Retour à ${this.serviceName}`;
+            }
         }
 
         async init() {
