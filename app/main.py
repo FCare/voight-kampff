@@ -86,6 +86,11 @@ class ServiceConfig:
             "url": "https://unmute-transcript.caronboulme.fr",
             "display_name": "Unmute Transcript",
             "priority": 5
+        },
+        "alfred": {
+            "url": "https://liste.caronboulme.fr",
+            "display_name": "Alfred",
+            "priority": 6
         }
     }
     
@@ -404,6 +409,7 @@ app.add_middleware(
     allow_origins=[
         "https://assistant.caronboulme.fr",
         "https://joshua.caronboulme.fr",
+        "https://liste.caronboulme.fr",
         "http://localhost:3000",
         "http://localhost:8000",
         "http://127.0.0.1:3000",
