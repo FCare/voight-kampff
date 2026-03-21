@@ -693,12 +693,28 @@ async def register_submit(
         "pending_validation": True
     })
 
-@app.get("/auth/dashboard")
+@app.get("/auth/dashboard", response_class=HTMLResponse)
+async def dashboard_page(
+    request: Request,
+    current_user: User = Depends(get_current_user),
+    session_db: AsyncSession = Depends(get_session)
+):
+    """Dashboard page - Returns HTML template"""
+    if not current_user:
+        # Redirect to login instead of raising exception
+        return RedirectResponse(url="/auth/login", status_code=302)
+    
+    return templates.TemplateResponse("dashboard.html", {
+        "request": request,
+        "user": current_user
+    })
+
+@app.get("/auth/dashboard/api")
 async def dashboard_api(
     current_user: User = Depends(get_current_user),
     session_db: AsyncSession = Depends(get_session)
 ):
-    """Dashboard API - Returns JSON data for Joshua frontend"""
+    """Dashboard API - Returns JSON data for frontend"""
     if not current_user:
         raise HTTPException(status_code=401, detail="Authentication required")
     
