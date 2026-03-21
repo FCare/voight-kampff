@@ -12,7 +12,9 @@ from datetime import datetime, timedelta
 from typing import Optional, List, Tuple
 
 from fastapi import FastAPI, Header, HTTPException, Depends, status, Request, Form, Cookie
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
+from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
@@ -403,6 +405,10 @@ app = FastAPI(
     version="2.0.0"
 )
 
+# Mount static files and templates
+app.mount("/static", StaticFiles(directory="app/static"), name="static")
+templates = Jinja2Templates(directory="app/templates")
+
 # Configure CORS for cross-domain requests from Joshua frontend
 app.add_middleware(
     CORSMiddleware,
@@ -510,6 +516,31 @@ async def health():
 
 # ========== WEB AUTHENTICATION ENDPOINTS ==========
 
+@app.get("/auth/login", response_class=HTMLResponse)
+async def login_page(
+    request: Request,
+    redirect_after: Optional[str] = None,
+    service_name: Optional[str] = None
+):
+    """Display login page"""
+    return templates.TemplateResponse("login.html", {
+        "request": request,
+        "redirect_after": redirect_after,
+        "service_name": service_name
+    })
+
+@app.get("/auth/register", response_class=HTMLResponse)
+async def register_page(
+    request: Request,
+    redirect_after: Optional[str] = None,
+    service_name: Optional[str] = None
+):
+    """Display registration page"""
+    return templates.TemplateResponse("register.html", {
+        "request": request,
+        "redirect_after": redirect_after,
+        "service_name": service_name
+    })
 
 @app.post("/auth/login")
 async def login_submit(
