@@ -1461,18 +1461,40 @@ async def verify_api_key(
     if not is_authenticated:
         print(f"🔍 VERIFY DEBUG - Authentication FAILED for service {service}, error_type: {error_type}")
         
-        if error_type == "FORBIDDEN":
-            # User is authenticated but doesn't have access to this service
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: insufficient permissions for this service"
-            )
+        # Check if this is a browser request (wants HTML) or API request (wants JSON)
+        accept_header = request.headers.get("accept", "")
+        is_browser_request = "text/html" in accept_header
+        
+        print(f"🔍 VERIFY DEBUG - Accept header: {accept_header}")
+        print(f"🔍 VERIFY DEBUG - Is browser request: {is_browser_request}")
+        
+        if is_browser_request:
+            # Browser request - redirect to appropriate auth page
+            forwarded_proto = request.headers.get("x-forwarded-proto", "https")
+            original_url = f"{forwarded_proto}://{x_forwarded_host}{x_forwarded_uri or '/'}"
+            
+            if error_type == "FORBIDDEN":
+                # User authenticated but insufficient permissions - redirect to unauthorized page
+                redirect_url = f"https://auth.caronboulme.fr/auth/unauthorized?redirect={original_url}"
+                print(f"🔍 VERIFY DEBUG - Browser 403 redirect to: {redirect_url}")
+                return RedirectResponse(url=redirect_url, status_code=302)
+            else:
+                # User not authenticated - redirect to login page
+                redirect_url = f"https://auth.caronboulme.fr/auth/login?redirect={original_url}"
+                print(f"🔍 VERIFY DEBUG - Browser 401 redirect to: {redirect_url}")
+                return RedirectResponse(url=redirect_url, status_code=302)
         else:
-            # User is not authenticated (UNAUTHENTICATED)
-            raise HTTPException(
-                status_code=status.HTTP_401_UNAUTHORIZED,
-                detail="Missing or invalid authentication"
-            )
+            # API request - return proper HTTP error codes
+            if error_type == "FORBIDDEN":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: insufficient permissions for this service"
+                )
+            else:
+                raise HTTPException(
+                    status_code=status.HTTP_401_UNAUTHORIZED,
+                    detail="Missing or invalid authentication"
+                )
     
     # Check if admin access is required for specific services
     if service == "traefik":
