@@ -518,12 +518,20 @@ async def health():
 # ========== WEB AUTHENTICATION ENDPOINTS ==========
 
 @app.get("/auth/login", response_class=HTMLResponse)
-async def login_page(
-    request: Request,
-    redirect: Optional[str] = None,
-    service_name: Optional[str] = None
-):
+async def login_page(request: Request):
     """Display login page"""
+    
+    forwarded_host = request.headers.get("x-forwarded-host")
+    forwarded_uri = request.headers.get("x-forwarded-uri", "/")
+    forwarded_proto = request.headers.get("x-forwarded-proto", "https")
+    
+    redirect = None
+    service_name = None
+    
+    if forwarded_host and forwarded_host != "auth.caronboulme.fr":
+        redirect = f"{forwarded_proto}://{forwarded_host}{forwarded_uri}"
+        service_name = forwarded_host.split('.')[0]
+    
     return templates.TemplateResponse("login.html", {
         "request": request,
         "redirect": redirect,
@@ -963,20 +971,27 @@ async def logout():
 @app.get("/auth/unauthorized", response_class=HTMLResponse)
 async def unauthorized_page(
     request: Request,
-    service: Optional[str] = None,
-    requested: Optional[str] = None,
     current_user: User = Depends(get_current_user)
 ):
     """Page d'accès non autorisé pour utilisateurs authentifiés"""
     if not current_user:
-        # Si pas authentifié, rediriger vers login
         return RedirectResponse(url="/auth/login", status_code=302)
+    
+    forwarded_host = request.headers.get("x-forwarded-host")
+    forwarded_uri = request.headers.get("x-forwarded-uri", "/")
+    forwarded_proto = request.headers.get("x-forwarded-proto", "https")
+    
+    service = forwarded_host
+    requested_url = None
+    
+    if forwarded_host and forwarded_host != "auth.caronboulme.fr":
+        requested_url = f"{forwarded_proto}://{forwarded_host}{forwarded_uri}"
     
     return templates.TemplateResponse("unauthorized.html", {
         "request": request,
         "user": current_user,
         "service": service,
-        "requested_url": requested
+        "requested_url": requested_url
     })
 
 # ========== ADMIN ENDPOINTS ==========
