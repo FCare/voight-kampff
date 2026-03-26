@@ -330,7 +330,7 @@
             handleUrlParams() {
                 const urlParams = new URLSearchParams(window.location.search);
                 const serviceName = urlParams.get('service_name');
-                const redirectUrl = urlParams.get('redirect_after');
+                const redirectUrl = urlParams.get('redirect');
                 
                 if (serviceName && redirectUrl) {
                     this.showServiceInfo(serviceName, redirectUrl);
@@ -344,7 +344,7 @@
                 const urlParams = new URLSearchParams(window.location.search);
                 return {
                     service_name: urlParams.get('service_name'),
-                    redirect_after: urlParams.get('redirect_after')
+                    redirect: urlParams.get('redirect')
                 };
             }
 
@@ -366,8 +366,8 @@
                     if (response.ok) {
                         // Already authenticated, handle redirect
                         const params = this.getRedirectParams();
-                        if (params.redirect_after) {
-                            window.location.href = params.redirect_after;
+                        if (params.redirect) {
+                            window.location.href = params.redirect;
                         } else {
                             window.location.href = `${this.apiBaseUrl}/auth/dashboard`;
                         }
@@ -397,8 +397,8 @@
                     formData.append('username', username);
                     formData.append('password', password);
                     
-                    if (params.redirect_after) {
-                        formData.append('redirect_after', params.redirect_after);
+                    if (params.redirect) {
+                        formData.append('redirect', params.redirect);
                     }
                     if (params.service_name) {
                         formData.append('service_name', params.service_name);
@@ -422,8 +422,8 @@
                             const data = await response.json();
                             this.showMessage(successDiv, 'Connexion réussie ! Redirection...');
                             setTimeout(() => {
-                                if (params.redirect_after) {
-                                    window.location.href = params.redirect_after;
+                                if (params.redirect) {
+                                    window.location.href = params.redirect;
                                 } else {
                                     window.location.href = `${this.apiBaseUrl}/auth/dashboard`;
                                 }

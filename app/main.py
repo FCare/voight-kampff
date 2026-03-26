@@ -484,7 +484,7 @@ async def root(request: Request, session_db: AsyncSession = Depends(get_session)
     print(f"🔍 ROOT DEBUG - Root endpoint accessed from host: {request.headers.get('host')}")
     
     # Check if user is already logged in with valid session
-    is_authenticated, user_name, db_key = await check_authentication(
+    is_authenticated, user_name, db_key, error_type = await check_authentication(
         request, session_db, "auth", None, None
     )
     
@@ -520,26 +520,26 @@ async def health():
 @app.get("/auth/login", response_class=HTMLResponse)
 async def login_page(
     request: Request,
-    redirect_after: Optional[str] = None,
+    redirect: Optional[str] = None,
     service_name: Optional[str] = None
 ):
     """Display login page"""
     return templates.TemplateResponse("login.html", {
         "request": request,
-        "redirect_after": redirect_after,
+        "redirect": redirect,
         "service_name": service_name
     })
 
 @app.get("/auth/register", response_class=HTMLResponse)
 async def register_page(
     request: Request,
-    redirect_after: Optional[str] = None,
+    redirect: Optional[str] = None,
     service_name: Optional[str] = None
 ):
     """Display registration page"""
     return templates.TemplateResponse("register.html", {
         "request": request,
-        "redirect_after": redirect_after,
+        "redirect": redirect,
         "service_name": service_name
     })
 
@@ -548,7 +548,7 @@ async def login_submit(
     request: Request,
     username: str = Form(...),
     password: str = Form(...),
-    redirect_after: Optional[str] = Form(None),
+    redirect: Optional[str] = Form(None),
     session_db: AsyncSession = Depends(get_session)
 ):
     """Process login form - API version"""
@@ -586,8 +586,8 @@ async def login_submit(
     session_token = serialize_session(user.id, client_ip, user_agent)
     
     # Determine next URL
-    if redirect_after:
-        next_url = redirect_after
+    if redirect:
+        next_url = redirect
     else:
         # Find first authorized service for this user (refactored with ServiceConfig)
         user_scopes = parse_user_scopes(user)
@@ -636,7 +636,7 @@ async def register_submit(
     email: str = Form(...),
     password: str = Form(...),
     password_confirm: str = Form(...),
-    redirect_after: Optional[str] = Form(None),
+    redirect: Optional[str] = Form(None),
     session_db: AsyncSession = Depends(get_session)
 ):
     """Process registration form"""
@@ -960,6 +960,25 @@ async def logout():
     print(f"🔍 LOGOUT DEBUG - Session cookie deleted for domain .caronboulme.fr")
     return response
 
+@app.get("/auth/unauthorized", response_class=HTMLResponse)
+async def unauthorized_page(
+    request: Request,
+    service: Optional[str] = None,
+    requested: Optional[str] = None,
+    current_user: User = Depends(get_current_user)
+):
+    """Page d'accès non autorisé pour utilisateurs authentifiés"""
+    if not current_user:
+        # Si pas authentifié, rediriger vers login
+        return RedirectResponse(url="/auth/login", status_code=302)
+    
+    return templates.TemplateResponse("unauthorized.html", {
+        "request": request,
+        "user": current_user,
+        "service": service,
+        "requested_url": requested
+    })
+
 # ========== ADMIN ENDPOINTS ==========
 
 @app.post("/auth/admin/activate-user/{user_id}")
@@ -1205,10 +1224,11 @@ async def check_authentication(
     service: str = "unknown",
     authorization: Optional[str] = None,
     x_api_key: Optional[str] = None
-) -> tuple[bool, Optional[str], Optional[APIKey]]:
+) -> tuple[bool, Optional[str], Optional[APIKey], str]:
     """
     Common authentication logic for both /verify and landing page
-    Returns: (is_authenticated, username, api_key_record)
+    Returns: (is_authenticated, username, api_key_record, error_type)
+    error_type can be: "NONE", "UNAUTHENTICATED", "FORBIDDEN"
     """
     
     print(f"🔍 AUTH DEBUG - Starting check_authentication for service: {service}")
@@ -1298,7 +1318,7 @@ async def check_authentication(
                 else:
                     # User doesn't have permission for this service
                     print(f"🔍 AUTH DEBUG - User {user_name} does NOT have permission for service {service}")
-                    return False, None, None
+                    return False, user_name, None, "FORBIDDEN"
             else:
                 print(f"🔍 AUTH DEBUG - No active user found for user_id {user_id}")
         else:
@@ -1309,7 +1329,7 @@ async def check_authentication(
     # If no authentication method found
     if not api_key:
         print(f"🔍 AUTH DEBUG - No API key generated, authentication failed")
-        return False, None, None
+        return False, None, None, "UNAUTHENTICATED"
     
     print(f"🔍 AUTH DEBUG - API key generated: {api_key[:20]}...")
     
@@ -1317,7 +1337,7 @@ async def check_authentication(
     if api_key.startswith("session_"):
         # For session-based auth, we already validated the user and scopes above
         # Return success with the user_name we extracted from session
-        return True, user_name, None
+        return True, user_name, None, "NONE"
     
     # Query database for real API key
     result = await session.execute(
@@ -1326,20 +1346,20 @@ async def check_authentication(
     db_key = result.scalar_one_or_none()
     
     if not db_key:
-        return False, None, None
+        return False, None, None, "UNAUTHENTICATED"
     
     # Check if key is active
     if not db_key.is_active:
-        return False, None, None
+        return False, None, None, "UNAUTHENTICATED"
     
     # Check expiration
     if db_key.expires_at and db_key.expires_at < datetime.utcnow():
-        return False, None, None
+        return False, None, None, "UNAUTHENTICATED"
     
     # Check scopes for real API keys
     allowed_scopes = [s.strip() for s in db_key.scopes.split(',')]
     if service not in allowed_scopes and '*' not in allowed_scopes:
-        return False, None, None
+        return False, db_key.user, None, "FORBIDDEN"
     
     # Update last_used timestamp for real API keys
     db_key.last_used = datetime.utcnow()
@@ -1348,7 +1368,7 @@ async def check_authentication(
     # Use the original user name if available, otherwise fall back to API key user
     final_user = user_name if user_name != "unknown" else db_key.user
     
-    return True, final_user, db_key
+    return True, final_user, db_key, "NONE"
 
 # ========== VERIFICATION ENDPOINT (ENHANCED FOR COOKIES) ==========
 
@@ -1393,18 +1413,27 @@ async def verify_api_key(
     
     # Check authentication using common function for other services
     print(f"🔍 VERIFY DEBUG - Calling check_authentication for service: {service}")
-    is_authenticated, user_name, db_key = await check_authentication(
+    is_authenticated, user_name, db_key, error_type = await check_authentication(
         request, session_db, service, authorization, x_api_key
     )
     
-    print(f"🔍 VERIFY DEBUG - Authentication result: is_authenticated={is_authenticated}, user_name={user_name}, db_key={'present' if db_key else 'None'}")
+    print(f"🔍 VERIFY DEBUG - Authentication result: is_authenticated={is_authenticated}, user_name={user_name}, db_key={'present' if db_key else 'None'}, error_type={error_type}")
     
     if not is_authenticated:
-        print(f"🔍 VERIFY DEBUG - Authentication FAILED for service {service}")
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missing or invalid authentication"
-        )
+        print(f"🔍 VERIFY DEBUG - Authentication FAILED for service {service}, error_type: {error_type}")
+        
+        if error_type == "FORBIDDEN":
+            # User is authenticated but doesn't have access to this service
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: insufficient permissions for this service"
+            )
+        else:
+            # User is not authenticated (UNAUTHENTICATED)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing or invalid authentication"
+            )
     
     # Check if admin access is required for specific services
     if service == "traefik":

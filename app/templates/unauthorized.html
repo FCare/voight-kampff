@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Accès non autorisé - Voight-Kampff</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', sans-serif;
+            background: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+            color: #1f2937;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .unauthorized-container {
+            width: 100%;
+            max-width: 500px;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            border-radius: 20px;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1), 0 4px 10px rgba(0, 0, 0, 0.05);
+            border: 1px solid #e5e7eb;
+            overflow: hidden;
+        }
+
+        .unauthorized-header {
+            text-align: center;
+            padding: 40px 30px 30px 30px;
+            background: linear-gradient(135deg, #fef2f2 0%, #fee2e2 100%);
+            border-bottom: 1px solid #fca5a5;
+        }
+
+        .unauthorized-icon {
+            width: 80px;
+            height: 80px;
+            margin: 0 auto 20px;
+            background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 40px;
+            color: white;
+        }
+
+        .unauthorized-header h1 {
+            font-size: 2rem;
+            font-weight: 700;
+            color: #dc2626;
+            margin-bottom: 8px;
+            letter-spacing: -0.025em;
+        }
+
+        .unauthorized-header p {
+            color: #991b1b;
+            font-size: 1rem;
+            font-weight: 400;
+        }
+
+        .unauthorized-content {
+            padding: 30px;
+        }
+
+        .user-info {
+            background: linear-gradient(135deg, #f3f4f6 0%, #e5e7eb 100%);
+            border: 1px solid #d1d5db;
+            border-radius: 12px;
+            padding: 16px;
+            margin-bottom: 24px;
+        }
+
+        .user-info h3 {
+            color: #374151;
+            font-size: 1rem;
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .user-info p {
+            color: #6b7280;
+            font-size: 0.875rem;
+            margin: 4px 0;
+        }
+
+        .service-info {
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border: 1px solid #f59e0b;
+            color: #92400e;
+            padding: 16px;
+            border-radius: 12px;
+            margin-bottom: 24px;
+        }
+
+        .service-info h3 {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+
+        .service-info p {
+            font-size: 0.875rem;
+            line-height: 1.5;
+        }
+
+        .service-name {
+            font-weight: 600;
+            color: #78350f;
+        }
+
+        .actions {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 12px;
+            font-size: 1rem;
+            font-weight: 600;
+            text-decoration: none;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: none;
+            flex: 1;
+            min-width: 140px;
+            text-align: center;
+            display: inline-block;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #4b5563 0%, #374151 100%);
+            color: #ffffff;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .btn-primary:hover {
+            background: linear-gradient(135deg, #374151 0%, #1f2937 100%);
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+        }
+
+        .btn-secondary {
+            background: linear-gradient(135deg, #ffffff 0%, #f9fafb 100%);
+            color: #374151;
+            border: 1px solid #d1d5db;
+        }
+
+        .btn-secondary:hover {
+            background: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+            border-color: #9ca3af;
+            transform: translateY(-1px);
+        }
+
+        .contact-info {
+            margin-top: 24px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+        }
+
+        .contact-info p {
+            color: #6b7280;
+            font-size: 0.875rem;
+            margin-bottom: 8px;
+        }
+
+        .contact-info a {
+            color: #4b5563;
+            text-decoration: none;
+            font-weight: 500;
+        }
+
+        .contact-info a:hover {
+            color: #374151;
+            text-decoration: underline;
+        }
+
+        /* Responsive */
+        @media (max-width: 480px) {
+            .unauthorized-container {
+                margin: 0 20px;
+                border-radius: 16px;
+            }
+            
+            .unauthorized-header {
+                padding: 30px 20px 20px 20px;
+            }
+            
+            .unauthorized-header h1 {
+                font-size: 1.75rem;
+            }
+            
+            .unauthorized-content {
+                padding: 20px;
+            }
+
+            .actions {
+                flex-direction: column;
+            }
+
+            .btn {
+                flex: none;
+                min-width: auto;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="unauthorized-container">
+        <div class="unauthorized-header">
+            <div class="unauthorized-icon">🚫</div>
+            <h1>Accès non autorisé</h1>
+            <p>Vous n'avez pas la permission d'accéder à ce service</p>
+        </div>
+        
+        <div class="unauthorized-content">
+            {% if user %}
+            <div class="user-info">
+                <h3>Informations de connexion</h3>
+                <p><strong>Utilisateur :</strong> {{ user.username }}</p>
+                <p><strong>Statut :</strong> {% if user.is_admin %}Administrateur{% else %}Utilisateur{% endif %}</p>
+            </div>
+            {% endif %}
+
+            {% if service %}
+            <div class="service-info">
+                <h3>Service demandé</h3>
+                <p>Vous avez tenté d'accéder au service <span class="service-name">{{ service }}</span>.</p>
+                <p>Votre compte ne dispose pas des autorisations nécessaires pour accéder à ce service.</p>
+            </div>
+            {% endif %}
+
+            <div class="actions">
+                <a href="/auth/dashboard" class="btn btn-primary">
+                    Retour au dashboard
+                </a>
+                <a href="/auth/logout" class="btn btn-secondary">
+                    Se déconnecter
+                </a>
+            </div>
+
+            <div class="contact-info">
+                <p>Si vous pensez que c'est une erreur, contactez l'administrateur.</p>
+                {% if user and user.is_admin %}
+                <p><a href="/auth/dashboard">Gérer les autorisations utilisateurs</a></p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Auto-focus sur le bouton principal
+        document.addEventListener('DOMContentLoaded', function() {
+            const primaryBtn = document.querySelector('.btn-primary');
+            if (primaryBtn) {
+                primaryBtn.focus();
+            }
+        });
+
+        // Gestion du bouton retour navigateur
+        window.addEventListener('pageshow', function(event) {
+            if (event.persisted) {
+                // Page chargée depuis le cache, actualiser si nécessaire
+                console.log('Page loaded from cache');
+            }
+        });
+    </script>
+</body>
+</html>
