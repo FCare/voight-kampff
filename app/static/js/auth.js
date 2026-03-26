@@ -55,22 +55,22 @@ class VoightKampffAuth {
 
     handleUrlParams() {
         const urlParams = new URLSearchParams(window.location.search);
-        const redirectAfter = urlParams.get('redirect_after');
+        const redirect = urlParams.get('redirect');
         const serviceName = urlParams.get('service_name');
         
         // Show service info if redirecting from a specific service
-        if (redirectAfter && serviceName) {
-            this.showServiceInfo(serviceName, redirectAfter);
+        if (redirect && serviceName) {
+            this.showServiceInfo(serviceName, redirect);
         }
     }
 
     getRedirectParams() {
         const urlParams = new URLSearchParams(window.location.search);
-        const redirectAfter = urlParams.get('redirect_after');
+        const redirect = urlParams.get('redirect');
         const serviceName = urlParams.get('service_name');
         
-        if (redirectAfter) {
-            let params = `?redirect_after=${encodeURIComponent(redirectAfter)}`;
+        if (redirect) {
+            let params = `?redirect=${encodeURIComponent(redirect)}`;
             if (serviceName) {
                 params += `&service_name=${encodeURIComponent(serviceName)}`;
             }
@@ -102,10 +102,10 @@ class VoightKampffAuth {
             if (response.ok) {
                 // Already authenticated, handle redirect
                 const urlParams = new URLSearchParams(window.location.search);
-                const redirectAfter = urlParams.get('redirect_after');
+                const redirect = urlParams.get('redirect');
                 
-                if (redirectAfter) {
-                    window.location.href = redirectAfter;
+                if (redirect) {
+                    window.location.href = redirect;
                 } else {
                     // Redirect to dashboard
                     window.location.href = '/auth/dashboard';
@@ -137,9 +137,9 @@ class VoightKampffAuth {
             
             // Add redirect parameter if present
             const urlParams = new URLSearchParams(window.location.search);
-            const redirectAfter = urlParams.get('redirect_after');
-            if (redirectAfter) {
-                formData.append('redirect_after', redirectAfter);
+            const redirect = urlParams.get('redirect');
+            if (redirect) {
+                formData.append('redirect', redirect);
             }
 
             const response = await fetch(`${this.apiBaseUrl}/auth/login`, {
@@ -157,8 +157,8 @@ class VoightKampffAuth {
                 setTimeout(() => {
                     if (data.next_url) {
                         window.location.href = data.next_url;
-                    } else if (redirectAfter) {
-                        window.location.href = redirectAfter;
+                    } else if (redirect) {
+                        window.location.href = redirect;
                     } else {
                         window.location.href = '/auth/dashboard';
                     }

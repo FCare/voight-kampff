@@ -480,9 +480,9 @@
         }
 
         detectReturnService() {
-            // Check URL parameters first (from redirect_after)
+            // Check URL parameters first (from redirect)
             const urlParams = new URLSearchParams(window.location.search);
-            const redirectAfter = urlParams.get('redirect_after');
+            const redirect = urlParams.get('redirect');
             const serviceName = urlParams.get('service_name');
             
             // Check session storage (set during login)
@@ -493,9 +493,9 @@
             const referrer = document.referrer;
             
             // Priority: URL params > session storage > referrer
-            if (redirectAfter) {
-                this.returnUrl = redirectAfter;
-                this.serviceName = serviceName || this.getServiceNameFromUrl(redirectAfter);
+            if (redirect) {
+                this.returnUrl = redirect;
+                this.serviceName = serviceName || this.getServiceNameFromUrl(redirect);
             } else if (storedReturnUrl) {
                 this.returnUrl = storedReturnUrl;
                 this.serviceName = storedServiceName || this.getServiceNameFromUrl(storedReturnUrl);
