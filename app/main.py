@@ -96,6 +96,11 @@ class ServiceConfig:
         }
     }
     
+    # Mapping des noms d'hôtes vers les scopes
+    HOST_TO_SCOPE = {
+        "liste": "alfred"  # liste.caronboulme.fr → scope alfred
+    }
+    
     @classmethod
     def get_default_scopes(cls) -> List[str]:
         """Retourne la liste des services par défaut pour un admin (scope '*')"""
@@ -1401,10 +1406,12 @@ async def verify_api_key(
     Supports both API keys and session cookies
     """
     
-    # Extract service name from forwarded host
+    # Extract service name from forwarded host and map to scope
     service = "unknown"
     if x_forwarded_host:
-        service = x_forwarded_host.split('.')[0]
+        host_prefix = x_forwarded_host.split('.')[0]
+        # Map host to correct scope using ServiceConfig
+        service = ServiceConfig.HOST_TO_SCOPE.get(host_prefix, host_prefix)
     
     # Debug logging
     print(f"🔍 VERIFY DEBUG - Service: {service}")
