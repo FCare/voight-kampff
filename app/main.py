@@ -488,6 +488,23 @@ async def startup_event():
 async def root(request: Request, session_db: AsyncSession = Depends(get_session)):
     print(f"🔍 ROOT DEBUG - Root endpoint accessed from host: {request.headers.get('host')}")
     
+    # Check if this request comes from a Traefik error middleware
+    forwarded_host = request.headers.get("x-forwarded-host")
+    forwarded_uri = request.headers.get("x-forwarded-uri")
+    
+    if forwarded_host and forwarded_uri:
+        print(f"🔍 ROOT DEBUG - Traefik error detected: host={forwarded_host}, uri={forwarded_uri}")
+        
+        # This is a Traefik error redirect - redirect to unauthorized page with original URL
+        forwarded_proto = request.headers.get("x-forwarded-proto", "https")
+        original_url = f"{forwarded_proto}://{forwarded_host}{forwarded_uri}"
+        
+        print(f"🔍 ROOT DEBUG - Redirecting to unauthorized page with original URL: {original_url}")
+        return RedirectResponse(
+            url=f"/auth/unauthorized?redirect={original_url}",
+            status_code=302
+        )
+    
     # Check if user is already logged in with valid session
     is_authenticated, user_name, db_key, error_type = await check_authentication(
         request, session_db, "auth", None, None
