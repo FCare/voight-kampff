@@ -993,21 +993,30 @@ async def logout():
 @app.get("/auth/unauthorized", response_class=HTMLResponse)
 async def unauthorized_page(
     request: Request,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    redirect: str = None
 ):
     """Page d'accès non autorisé pour utilisateurs authentifiés"""
     if not current_user:
         return RedirectResponse(url="/auth/login", status_code=302)
     
-    forwarded_host = request.headers.get("x-forwarded-host")
-    forwarded_uri = request.headers.get("x-forwarded-uri", "/")
-    forwarded_proto = request.headers.get("x-forwarded-proto", "https")
+    # Extraire le service du paramètre redirect ou des headers
+    service = "Service inconnu"
+    requested_url = redirect
     
-    service = forwarded_host
-    requested_url = None
-    
-    if forwarded_host and forwarded_host != "auth.caronboulme.fr":
-        requested_url = f"{forwarded_proto}://{forwarded_host}{forwarded_uri}"
+    if redirect:
+        # Extraire le host du paramètre redirect
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(redirect)
+            service = parsed.hostname or "Service inconnu"
+        except:
+            service = "Service inconnu"
+    else:
+        # Fallback sur les headers forwarded si pas de paramètre redirect
+        forwarded_host = request.headers.get("x-forwarded-host")
+        if forwarded_host and forwarded_host != "auth.caronboulme.fr":
+            service = forwarded_host
     
     return templates.TemplateResponse("unauthorized.html", {
         "request": request,
