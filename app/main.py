@@ -1305,7 +1305,7 @@ async def check_authentication(
             # Check for suspicious activity
             if is_session_suspicious(session_data):
                 print(f"🚨 SECURITY ALERT - Suspicious session detected for user {user_id}, denying access")
-                return False, None, None
+                return False, None, None, "FORBIDDEN"
             
             # Check if session should be rotated
             if should_rotate_session(session_data):
@@ -1356,7 +1356,7 @@ async def check_authentication(
                         print(f"🔍 AUTH DEBUG - Allowing general access (*) - user has scopes: {user.allowed_scopes}")
                     else:
                         print(f"🔍 AUTH DEBUG - User {user_name} has no scopes for general access")
-                        return False, None, None
+                        return False, None, None, "UNAUTHENTICATED"
                 elif user.allowed_scopes == "*" or '*' in user_allowed_scopes or service in user_allowed_scopes:
                     # User has permission for this specific service
                     api_key = f"session_{user_id}_{service}"
