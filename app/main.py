@@ -1262,14 +1262,36 @@ async def logout():
     print(f"🔍 LOGOUT DEBUG - User logged out")
     response = RedirectResponse(url="/auth/login", status_code=303)
     
-    # Delete cookie with same domain settings as when it was created
+    # Delete cookie with exact same parameters as when it was created
     response.delete_cookie(
         key="vk_session",
-        domain=".caronboulme.fr",  # Same domain as when cookie was set
+        domain=".caronboulme.fr",
+        path="/",  # Explicitly specify path
         secure=True,
-        samesite="lax"
+        samesite="lax",
+        httponly=True  # Add httponly parameter
     )
-    print(f"🔍 LOGOUT DEBUG - Session cookie deleted for domain .caronboulme.fr")
+    
+    # Also delete cookie for the specific auth subdomain as fallback
+    response.delete_cookie(
+        key="vk_session",
+        domain="auth.caronboulme.fr",
+        path="/",
+        secure=True,
+        samesite="lax",
+        httponly=True
+    )
+    
+    # Also delete cookie without domain (for localhost/direct access)
+    response.delete_cookie(
+        key="vk_session",
+        path="/",
+        secure=True,
+        samesite="lax",
+        httponly=True
+    )
+    
+    print(f"🔍 LOGOUT DEBUG - Session cookies deleted for all domains")
     return response
 
 @app.get("/auth/unauthorized", response_class=HTMLResponse)
