@@ -511,6 +511,71 @@ async def get_current_user(request: Request, session_db: AsyncSession = Depends(
     
     return user
 
+async def generate_temp_api_key_if_needed(user: User, session_db: AsyncSession) -> Optional[str]:
+    """Generate temporary API key if user has Joshua access"""
+    user_scopes = parse_user_scopes(user)
+    expanded_scopes = ServiceConfig.expand_meta_services(user_scopes)
+    
+    if 'joshua' in expanded_scopes or 'assistant' in expanded_scopes:
+        try:
+            # Chercher une API key temporaire existante et encore valide
+            existing_key = await session_db.execute(
+                select(APIKey).where(
+                    and_(
+                        APIKey.user_id == user.id,
+                        APIKey.key_name == "auto_session_joshua",
+                        APIKey.expires_at > datetime.utcnow(),
+                        APIKey.is_active == True
+                    )
+                )
+            )
+            existing_key = existing_key.scalar_one_or_none()
+            
+            if existing_key:
+                return existing_key.api_key
+            
+            # Supprimer les anciennes clés expirées
+            expired_keys = await session_db.execute(
+                select(APIKey).where(
+                    and_(
+                        APIKey.user_id == user.id,
+                        APIKey.key_name == "auto_session_joshua",
+                        or_(
+                            APIKey.expires_at <= datetime.utcnow(),
+                            APIKey.is_active == False
+                        )
+                    )
+                )
+            )
+            expired_keys_list = expired_keys.scalars().all()
+            
+            for expired_key in expired_keys_list:
+                await session_db.delete(expired_key)
+            
+            # Créer nouvelle API key temporaire
+            expires_at = datetime.utcnow() + timedelta(hours=24)
+            api_key = secrets.token_urlsafe(32)
+            
+            new_key = APIKey(
+                user_id=user.id,
+                user=user.username,
+                key_name="auto_session_joshua",
+                api_key=api_key,
+                scopes=user.allowed_scopes,
+                expires_at=expires_at,
+                is_active=True
+            )
+            
+            session_db.add(new_key)
+            await session_db.commit()
+            return api_key
+            
+        except Exception as e:
+            logger.error(f"Error generating temp API key for user {user.username}: {e}")
+            return None
+    
+    return None
+
 # FastAPI app
 app = FastAPI(
     title="Voight-Kampff",
@@ -747,6 +812,12 @@ async def login_submit(
     user_agent = get_user_agent(request)
     session_token = serialize_session(user.id, client_ip, user_agent)
     
+    # Generate temporary API key if user has Joshua access
+    temp_api_key = await generate_temp_api_key_if_needed(user, session_db)
+    temp_api_key_expires = None
+    if temp_api_key:
+        temp_api_key_expires = (datetime.utcnow() + timedelta(hours=24)).isoformat()
+    
     # Determine next URL
     if redirect:
         next_url = redirect
@@ -756,7 +827,7 @@ async def login_submit(
         print(f"🔍 LOGIN DEBUG - No redirect specified for {user.username}, redirecting to dashboard")
     
     # Create JSON response
-    response = JSONResponse(content={
+    response_content = {
         "success": True,
         "message": "Connexion réussie",
         "user": {
@@ -764,7 +835,14 @@ async def login_submit(
             "is_admin": user.is_admin
         },
         "next_url": next_url
-    })
+    }
+    
+    # Add API key to response if generated
+    if temp_api_key:
+        response_content["api_key"] = temp_api_key
+        response_content["api_key_expires"] = temp_api_key_expires
+    
+    response = JSONResponse(content=response_content)
     
     # Set session cookie
     response.set_cookie(
@@ -958,6 +1036,9 @@ async def google_callback(
         user_agent = get_user_agent(request)
         session_token = serialize_session(user.id, client_ip, user_agent)
         
+        # Generate temporary API key if user has Joshua access
+        temp_api_key = await generate_temp_api_key_if_needed(user, session_db)
+        
         # Determine redirect URL from session (stored during google_login)
         redirect_url = request.session.get('oauth_redirect')
         if redirect_url:
@@ -981,6 +1062,18 @@ async def google_callback(
             samesite="lax",
             domain=".caronboulme.fr"
         )
+        
+        # Add API key cookie if generated for frontend retrieval
+        if temp_api_key:
+            response.set_cookie(
+                key="joshua_api_key",
+                value=temp_api_key,
+                max_age=24 * 3600,  # 24 hours
+                httponly=False,  # Accessible via JavaScript
+                secure=True,
+                samesite="lax",
+                domain=".caronboulme.fr"
+            )
         
         print(f"🔍 GOOGLE AUTH SUCCESS - User {user.username} authenticated via Google OAuth")
         return response
