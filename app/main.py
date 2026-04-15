@@ -539,7 +539,12 @@ templates = Jinja2Templates(directory="templates")
 
 # Add Session middleware for OAuth (required by Authlib)
 from starlette.middleware.sessions import SessionMiddleware
-app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SECRET_KEY,
+    session_cookie="oauth_session",  # Different name from vk_session to avoid conflicts
+    max_age=SESSION_EXPIRE_HOURS * 3600  # Same expiry as auth sessions
+)
 
 # Configure CORS for cross-domain requests from Joshua frontend
 app.add_middleware(
