@@ -860,16 +860,14 @@ async def google_login(request: Request):
     
     # Store redirect URL in session if provided
     redirect_url = request.query_params.get('redirect')
+    if redirect_url:
+        request.session['oauth_redirect'] = redirect_url
     
     # Get Google OAuth client
     google = oauth.create_client('google')
     
-    # Generate redirect URI
+    # Use the exact redirect URI without additional parameters
     redirect_uri = GOOGLE_REDIRECT_URI
-    
-    # Add redirect parameter if provided
-    if redirect_url:
-        redirect_uri += f"?redirect={redirect_url}"
     
     # Redirect to Google for authentication
     return await google.authorize_redirect(request, redirect_uri)
@@ -966,9 +964,11 @@ async def google_callback(
         user_agent = get_user_agent(request)
         session_token = serialize_session(user.id, client_ip, user_agent)
         
-        # Determine redirect URL
-        redirect_url = request.query_params.get('redirect')
+        # Determine redirect URL from session (stored during google_login)
+        redirect_url = request.session.get('oauth_redirect')
         if redirect_url:
+            # Clear the redirect from session after use
+            del request.session['oauth_redirect']
             next_url = redirect_url
         else:
             # Find first authorized service for this user
