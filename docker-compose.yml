@@ -23,6 +23,10 @@ services:
       - VK_ADMIN_USERNAME=${VK_ADMIN_USERNAME}
       - VK_ADMIN_PASSWORD=${VK_ADMIN_PASSWORD}
       - VK_ADMIN_EMAIL=${VK_ADMIN_EMAIL}
+      # Google OAuth Configuration
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - GOOGLE_REDIRECT_URI=${GOOGLE_REDIRECT_URI:-https://auth.caronboulme.fr/auth/google/callback}
     volumes:
       - ./data:/data
       - ./config:/config

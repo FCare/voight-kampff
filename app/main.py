@@ -8,8 +8,10 @@ import os
 import secrets
 import re
 import logging
+import json
 from datetime import datetime, timedelta
 from typing import Optional, List, Tuple
+from urllib.parse import urlencode
 
 from fastapi import FastAPI, Header, HTTPException, Depends, status, Request, Form, Cookie
 from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
@@ -23,6 +25,8 @@ from sqlalchemy import String, DateTime, Boolean, Text, Integer, select, Foreign
 import bcrypt
 from itsdangerous import URLSafeTimedSerializer
 import uvicorn
+import httpx
+from authlib.integrations.starlette_client import OAuth
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -38,6 +42,11 @@ SESSION_EXPIRE_HOURS = int(os.getenv("VK_SESSION_EXPIRE_HOURS", "24"))
 ADMIN_USERNAME = os.getenv("VK_ADMIN_USERNAME")
 ADMIN_PASSWORD = os.getenv("VK_ADMIN_PASSWORD")
 ADMIN_EMAIL = os.getenv("VK_ADMIN_EMAIL", "admin@localhost")
+
+# Google OAuth configuration
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+GOOGLE_CLIENT_SECRET = os.getenv("GOOGLE_CLIENT_SECRET")
+GOOGLE_REDIRECT_URI = os.getenv("GOOGLE_REDIRECT_URI", "https://auth.caronboulme.fr/auth/google/callback")
 
 # Security
 session_serializer = URLSafeTimedSerializer(SECRET_KEY)
@@ -181,13 +190,17 @@ class User(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    hashed_password: Mapped[str] = mapped_column(String(255))
+    hashed_password: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # Optionnel pour OAuth
     is_active: Mapped[bool] = mapped_column(Boolean, default=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False)
     max_api_keys: Mapped[int] = mapped_column(Integer, default=100)  # Hardcoded to 100
     allowed_scopes: Mapped[str] = mapped_column(Text, default="")  # Allowed services for this user - NONE by default
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_login: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # OAuth fields
+    google_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True, index=True)
+    auth_provider: Mapped[str] = mapped_column(String(50), default="local")  # "local" ou "google"
+    profile_picture: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # URL de la photo de profil
 
 class Session(Base):
     __tablename__ = "sessions"
@@ -409,6 +422,21 @@ app = FastAPI(
     description="API Key Authentication Service - Testing for humanity, one request at a time",
     version="2.0.0"
 )
+
+# Initialize OAuth
+oauth = OAuth()
+
+# Configure Google OAuth
+if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
+    oauth.register(
+        name='google',
+        client_id=GOOGLE_CLIENT_ID,
+        client_secret=GOOGLE_CLIENT_SECRET,
+        server_metadata_url='https://accounts.google.com/.well-known/openid-configuration',
+        client_kwargs={
+            'scope': 'openid email profile'
+        }
+    )
 
 # Mount static files and templates
 app.mount("/static", StaticFiles(directory="static"), name="static")
@@ -722,6 +750,161 @@ async def register_submit(
         "message": "Inscription réussie ! Votre compte est en attente de validation par l'administrateur.",
         "pending_validation": True
     })
+
+# ========== GOOGLE OAUTH ENDPOINTS ==========
+
+@app.get("/auth/google/login")
+async def google_login(request: Request):
+    """Initiate Google OAuth login"""
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise HTTPException(status_code=503, detail="Google OAuth not configured")
+    
+    # Store redirect URL in session if provided
+    redirect_url = request.query_params.get('redirect')
+    
+    # Get Google OAuth client
+    google = oauth.create_client('google')
+    
+    # Generate redirect URI
+    redirect_uri = GOOGLE_REDIRECT_URI
+    
+    # Add redirect parameter if provided
+    if redirect_url:
+        redirect_uri += f"?redirect={redirect_url}"
+    
+    # Redirect to Google for authentication
+    return await google.authorize_redirect(request, redirect_uri)
+
+@app.get("/auth/google/callback")
+async def google_callback(
+    request: Request,
+    session_db: AsyncSession = Depends(get_session)
+):
+    """Handle Google OAuth callback"""
+    if not GOOGLE_CLIENT_ID or not GOOGLE_CLIENT_SECRET:
+        raise HTTPException(status_code=503, detail="Google OAuth not configured")
+    
+    try:
+        # Get Google OAuth client
+        google = oauth.create_client('google')
+        
+        # Get the authorization token
+        token = await google.authorize_access_token(request)
+        
+        # Get user info from Google
+        user_info = token.get('userinfo')
+        if not user_info:
+            # Fallback: fetch user info manually
+            resp = await google.parse_id_token(request, token)
+            user_info = resp
+        
+        google_id = user_info.get('sub')
+        email = user_info.get('email')
+        name = user_info.get('name')
+        picture = user_info.get('picture')
+        
+        if not google_id or not email:
+            raise HTTPException(status_code=400, detail="Failed to get user information from Google")
+        
+        # Check if user exists by Google ID
+        result = await session_db.execute(
+            select(User).where(User.google_id == google_id)
+        )
+        user = result.scalar_one_or_none()
+        
+        if not user:
+            # Check if user exists by email (for account linking)
+            result = await session_db.execute(
+                select(User).where(User.email == email)
+            )
+            user = result.scalar_one_or_none()
+            
+            if user:
+                # Link existing account with Google
+                user.google_id = google_id
+                user.auth_provider = "google"
+                user.profile_picture = picture
+                user.is_active = True  # Auto-activate OAuth users
+            else:
+                # Create new user
+                # Generate unique username from email if name not available
+                username = name or email.split('@')[0]
+                
+                # Ensure username is unique
+                counter = 1
+                original_username = username
+                while True:
+                    result = await session_db.execute(
+                        select(User).where(User.username == username)
+                    )
+                    if not result.scalar_one_or_none():
+                        break
+                    username = f"{original_username}_{counter}"
+                    counter += 1
+                
+                user = User(
+                    username=username,
+                    email=email,
+                    google_id=google_id,
+                    auth_provider="google",
+                    profile_picture=picture,
+                    is_active=True,  # Auto-activate OAuth users
+                    allowed_scopes=""  # Default: no scopes, admin must assign
+                )
+                session_db.add(user)
+        else:
+            # Update existing OAuth user info
+            user.profile_picture = picture
+            user.is_active = True
+        
+        # Update last login
+        user.last_login = datetime.utcnow()
+        await session_db.commit()
+        await session_db.refresh(user)
+        
+        # Create session
+        client_ip = get_client_ip(request)
+        user_agent = get_user_agent(request)
+        session_token = serialize_session(user.id, client_ip, user_agent)
+        
+        # Determine redirect URL
+        redirect_url = request.query_params.get('redirect')
+        if redirect_url:
+            next_url = redirect_url
+        else:
+            # Find first authorized service for this user
+            user_scopes = parse_user_scopes(user)
+            redirect_service_url, service_name = ServiceConfig.get_first_authorized_service(user_scopes)
+            
+            if redirect_service_url:
+                next_url = redirect_service_url
+            else:
+                # No authorized services, redirect to dashboard
+                next_url = "/auth/dashboard"
+        
+        # Create redirect response
+        response = RedirectResponse(url=next_url, status_code=302)
+        
+        # Set session cookie
+        response.set_cookie(
+            key="vk_session",
+            value=session_token,
+            max_age=SESSION_EXPIRE_HOURS * 3600,
+            httponly=True,
+            secure=True,
+            samesite="lax",
+            domain=".caronboulme.fr"
+        )
+        
+        print(f"🔍 GOOGLE AUTH SUCCESS - User {user.username} authenticated via Google OAuth")
+        return response
+        
+    except Exception as e:
+        print(f"🚨 GOOGLE AUTH ERROR: {e}")
+        return RedirectResponse(
+            url="/auth/login?error=Google authentication failed",
+            status_code=302
+        )
 
 @app.get("/auth/dashboard", response_class=HTMLResponse)
 async def dashboard_page(
