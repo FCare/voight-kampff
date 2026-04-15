@@ -537,6 +537,10 @@ if GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET:
 app.mount("/static", StaticFiles(directory="static"), name="static")
 templates = Jinja2Templates(directory="templates")
 
+# Add Session middleware for OAuth (required by Authlib)
+from starlette.middleware.sessions import SessionMiddleware
+app.add_middleware(SessionMiddleware, secret_key=SECRET_KEY)
+
 # Configure CORS for cross-domain requests from Joshua frontend
 app.add_middleware(
     CORSMiddleware,
