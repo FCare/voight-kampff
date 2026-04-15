@@ -751,20 +751,9 @@ async def login_submit(
     if redirect:
         next_url = redirect
     else:
-        # Find first authorized service for this user (refactored with ServiceConfig)
-        user_scopes = parse_user_scopes(user)
-        print(f"🔍 LOGIN DEBUG - User {user.username} scopes: {user_scopes}")
-        
-        # Get first authorized service according to priority
-        redirect_url, service_name = ServiceConfig.get_first_authorized_service(user_scopes)
-        
-        if redirect_url:
-            print(f"🔍 LOGIN DEBUG - Redirecting {user.username} to {service_name}: {redirect_url}")
-            next_url = redirect_url
-        else:
-            # No authorized services found, fallback to dashboard
-            next_url = "/auth/dashboard"
-            print(f"🔍 LOGIN DEBUG - No authorized services for {user.username}, redirecting to dashboard")
+        # No specific redirect requested - default to dashboard for direct auth.caronboulme.fr connections
+        next_url = "/auth/dashboard"
+        print(f"🔍 LOGIN DEBUG - No redirect specified for {user.username}, redirecting to dashboard")
     
     # Create JSON response
     response = JSONResponse(content={
@@ -976,15 +965,8 @@ async def google_callback(
             del request.session['oauth_redirect']
             next_url = redirect_url
         else:
-            # Find first authorized service for this user
-            user_scopes = parse_user_scopes(user)
-            redirect_service_url, service_name = ServiceConfig.get_first_authorized_service(user_scopes)
-            
-            if redirect_service_url:
-                next_url = redirect_service_url
-            else:
-                # No authorized services, redirect to dashboard
-                next_url = "/auth/dashboard"
+            # No specific redirect requested - default to dashboard for direct auth.caronboulme.fr connections
+            next_url = "/auth/dashboard"
         
         # Create redirect response
         response = RedirectResponse(url=next_url, status_code=302)
