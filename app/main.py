@@ -518,39 +518,32 @@ async def generate_temp_api_key_if_needed(user: User, session_db: AsyncSession) 
     
     if 'joshua' in expanded_scopes or 'assistant' in expanded_scopes:
         try:
-            # Chercher une API key temporaire existante et encore valide
+            # Clé unique par utilisateur pour éviter les conflits UNIQUE
+            key_name = f"auto_session_joshua_{user.id}"
+            
+            # Chercher une API key temporaire existante pour cet utilisateur
             existing_key = await session_db.execute(
                 select(APIKey).where(
                     and_(
                         APIKey.user_id == user.id,
-                        APIKey.key_name == "auto_session_joshua",
-                        APIKey.expires_at > datetime.utcnow(),
+                        APIKey.key_name == key_name,
                         APIKey.is_active == True
                     )
                 )
             )
             existing_key = existing_key.scalar_one_or_none()
             
+            # Si la clé existe, vérifier si elle est encore valide
             if existing_key:
-                return existing_key.api_key
-            
-            # Supprimer les anciennes clés expirées
-            expired_keys = await session_db.execute(
-                select(APIKey).where(
-                    and_(
-                        APIKey.user_id == user.id,
-                        APIKey.key_name == "auto_session_joshua",
-                        or_(
-                            APIKey.expires_at <= datetime.utcnow(),
-                            APIKey.is_active == False
-                        )
-                    )
-                )
-            )
-            expired_keys_list = expired_keys.scalars().all()
-            
-            for expired_key in expired_keys_list:
-                await session_db.delete(expired_key)
+                if existing_key.expires_at and existing_key.expires_at > datetime.utcnow():
+                    # Clé encore valide, la réutiliser
+                    print(f"🔍 API KEY DEBUG - Reusing valid temp key for user {user.username}")
+                    return existing_key.api_key
+                else:
+                    # Clé expirée, la supprimer
+                    print(f"🔍 API KEY DEBUG - Deleting expired temp key for user {user.username}")
+                    await session_db.delete(existing_key)
+                    await session_db.commit()
             
             # Créer nouvelle API key temporaire
             expires_at = datetime.utcnow() + timedelta(hours=24)
@@ -559,7 +552,7 @@ async def generate_temp_api_key_if_needed(user: User, session_db: AsyncSession) 
             new_key = APIKey(
                 user_id=user.id,
                 user=user.username,
-                key_name="auto_session_joshua",
+                key_name=key_name,
                 api_key=api_key,
                 scopes=user.allowed_scopes,
                 expires_at=expires_at,
@@ -568,6 +561,7 @@ async def generate_temp_api_key_if_needed(user: User, session_db: AsyncSession) 
             
             session_db.add(new_key)
             await session_db.commit()
+            print(f"🔍 API KEY DEBUG - Created new temp key for user {user.username}, expires: {expires_at}")
             return api_key
             
         except Exception as e:
