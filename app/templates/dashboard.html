@@ -446,6 +446,22 @@
             </div>
         </div>
 
+        <!-- Agent Access Card -->
+        <div class="card">
+            <h2>
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+                Accès des agents
+            </h2>
+            <div id="agent-access-container">
+                <div class="empty-state">
+                    <div class="empty-state-icon">🤖</div>
+                    <p>Chargement des agents...</p>
+                </div>
+            </div>
+        </div>
+
         <!-- Admin Section - Only visible for admins -->
         <div id="admin-section" style="display: none;">
             <div class="card">
@@ -594,7 +610,10 @@
             
             // Update API keys
             this.renderApiKeys();
-            
+
+            // Load agent access
+            this.loadAgentAccess();
+
             // Show admin section if user is admin
             if (this.userData.is_admin && this.userData.admin_users) {
                 document.getElementById('admin-section').style.display = 'block';
@@ -698,6 +717,76 @@
 
             container.innerHTML = '';
             container.appendChild(table);
+        }
+
+        async loadAgentAccess() {
+            try {
+                const response = await fetch(`${this.apiBaseUrl}/api/agent-access`, { credentials: 'include' });
+                if (!response.ok) return;
+                const agents = await response.json();
+                this.renderAgentAccess(agents);
+            } catch (e) {
+                console.error('Failed to load agent access', e);
+            }
+        }
+
+        renderAgentAccess(agents) {
+            const container = document.getElementById('agent-access-container');
+            if (!agents || agents.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🤖</div>
+                        <p>Aucun agent disponible.</p>
+                    </div>`;
+                return;
+            }
+
+            const table = document.createElement('table');
+            table.className = 'api-keys-table';
+            table.innerHTML = `
+                <thead><tr>
+                    <th>Agent</th>
+                    <th>Accès à vos topics</th>
+                    <th>Action</th>
+                </tr></thead>`;
+            const tbody = document.createElement('tbody');
+
+            agents.forEach(agent => {
+                const row = document.createElement('tr');
+                row.id = `agent-row-${agent.username}`;
+                row.innerHTML = `
+                    <td>${agent.username}</td>
+                    <td>
+                        <span class="status-badge ${agent.granted ? 'status-active' : 'status-inactive'}">
+                            ${agent.granted ? 'Autorisé' : 'Refusé'}
+                        </span>
+                    </td>
+                    <td>
+                        ${agent.granted
+                            ? `<button class="btn btn-danger" onclick="voightKampffDashboard.revokeAgent('${agent.username}')">Révoquer</button>`
+                            : `<button class="btn btn-primary" onclick="voightKampffDashboard.grantAgent('${agent.username}')">Autoriser</button>`
+                        }
+                    </td>`;
+                tbody.appendChild(row);
+            });
+
+            table.appendChild(tbody);
+            container.innerHTML = '';
+            container.appendChild(table);
+        }
+
+        async grantAgent(username) {
+            await fetch(`${this.apiBaseUrl}/api/agent-access/${username}/grant`, {
+                method: 'POST', credentials: 'include'
+            });
+            this.loadAgentAccess();
+        }
+
+        async revokeAgent(username) {
+            await fetch(`${this.apiBaseUrl}/api/agent-access/${username}/revoke`, {
+                method: 'DELETE', credentials: 'include'
+            });
+            this.loadAgentAccess();
         }
 
         initializeEventListeners() {

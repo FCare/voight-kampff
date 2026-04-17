@@ -236,7 +236,16 @@ class APIKey(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_used: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    
+
+
+class AgentAccess(Base):
+    __tablename__ = "agent_access"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    agent_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    granted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
 
 # Pydantic Models
 
@@ -346,10 +355,37 @@ def migrate_oauth_columns():
             conn.close()
         return False
 
+def migrate_agent_access():
+    """Crée la table agent_access si elle n'existe pas"""
+    import sqlite3
+    if not os.path.exists(DB_PATH):
+        return True
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS agent_access (
+                id INTEGER PRIMARY KEY,
+                owner_user_id INTEGER NOT NULL REFERENCES users(id),
+                agent_user_id INTEGER NOT NULL REFERENCES users(id),
+                granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS ix_agent_access_owner ON agent_access(owner_user_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS ix_agent_access_agent ON agent_access(agent_user_id)")
+        conn.commit()
+        conn.close()
+        print("✅ Table agent_access prête")
+        return True
+    except Exception as e:
+        print(f"❌ Erreur migration agent_access: {e}")
+        return False
+
+
 async def init_db():
-    # Migration OAuth avant la création du schéma SQLAlchemy
     migrate_oauth_columns()
-    
+    migrate_agent_access()
+
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 
@@ -1195,6 +1231,93 @@ async def dashboard_api(
         "user_allowed_scopes": user_allowed_scopes,
         "available_services": available_services
     })
+
+@app.get("/api/agent-access")
+async def get_agent_access(
+    current_user: User = Depends(get_current_user),
+    session_db: AsyncSession = Depends(get_session),
+):
+    """Retourne la liste des agents (comptes service) avec leur statut d'accès pour l'utilisateur courant"""
+    # Agents = utilisateurs avec au moins une API key active, distincts du current user
+    agents_result = await session_db.execute(
+        select(User)
+        .where(User.is_active == True, User.id != current_user.id)
+        .where(
+            User.id.in_(
+                select(APIKey.user_id).where(APIKey.is_active == True).distinct()
+            )
+        )
+        .order_by(User.username)
+    )
+    agents = agents_result.scalars().all()
+
+    # Accès déjà accordés
+    granted_result = await session_db.execute(
+        select(AgentAccess).where(AgentAccess.owner_user_id == current_user.id)
+    )
+    granted_ids = {row.agent_user_id for row in granted_result.scalars().all()}
+
+    return JSONResponse(content=[
+        {
+            "username": a.username,
+            "granted": a.id in granted_ids,
+        }
+        for a in agents
+    ])
+
+
+@app.post("/api/agent-access/{agent_username}/grant")
+async def grant_agent_access(
+    agent_username: str,
+    current_user: User = Depends(get_current_user),
+    session_db: AsyncSession = Depends(get_session),
+):
+    agent_result = await session_db.execute(
+        select(User).where(User.username == agent_username, User.is_active == True)
+    )
+    agent = agent_result.scalar_one_or_none()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent introuvable")
+
+    existing = await session_db.execute(
+        select(AgentAccess).where(
+            AgentAccess.owner_user_id == current_user.id,
+            AgentAccess.agent_user_id == agent.id,
+        )
+    )
+    if not existing.scalar_one_or_none():
+        session_db.add(AgentAccess(owner_user_id=current_user.id, agent_user_id=agent.id))
+        await session_db.commit()
+
+    return JSONResponse(content={"status": "granted"})
+
+
+@app.delete("/api/agent-access/{agent_username}/revoke")
+async def revoke_agent_access(
+    agent_username: str,
+    current_user: User = Depends(get_current_user),
+    session_db: AsyncSession = Depends(get_session),
+):
+    agent_result = await session_db.execute(
+        select(User).where(User.username == agent_username, User.is_active == True)
+    )
+    agent = agent_result.scalar_one_or_none()
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent introuvable")
+
+    result = await session_db.execute(
+        select(AgentAccess).where(
+            AgentAccess.owner_user_id == current_user.id,
+            AgentAccess.agent_user_id == agent.id,
+        )
+    )
+    row = result.scalar_one_or_none()
+    if row:
+        await session_db.delete(row)
+        await session_db.commit()
+
+    return JSONResponse(content={"status": "revoked"})
+
 
 @app.get("/auth/admin/traefik")
 async def admin_traefik_dashboard(
@@ -2103,6 +2226,25 @@ async def mqtt_acl(payload: MqttAclRequest, session_db: AsyncSession = Depends(g
     expected_prefix = f"users/{payload.username}/"
     if topic == f"users/{payload.username}" or topic.startswith(expected_prefix):
         return Response(status_code=200)
+
+    # Cross-user topic: check if agent has been explicitly granted access by the owner
+    if topic.startswith("users/"):
+        parts = topic.split("/")
+        if len(parts) >= 2:
+            owner_username = parts[1]
+            owner_result = await session_db.execute(
+                select(User).where(User.username == owner_username, User.is_active == True)
+            )
+            owner = owner_result.scalar_one_or_none()
+            if owner:
+                access_result = await session_db.execute(
+                    select(AgentAccess).where(
+                        AgentAccess.owner_user_id == owner.id,
+                        AgentAccess.agent_user_id == user.id,
+                    )
+                )
+                if access_result.scalar_one_or_none():
+                    return Response(status_code=200)
 
     raise HTTPException(status_code=403, detail="Topic access denied")
 
