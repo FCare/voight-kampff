@@ -789,6 +789,13 @@
             this.loadAgentAccess();
         }
 
+        async toggleService(userId) {
+            await fetch(`${this.apiBaseUrl}/auth/admin/users/${userId}/toggle-service`, {
+                method: 'POST', credentials: 'include'
+            });
+            await this.loadUserData();
+        }
+
         initializeEventListeners() {
             // Create key form
             document.getElementById('create-key-form').addEventListener('submit', (e) => {
@@ -1004,6 +1011,7 @@
                                     `<button onclick="voightKampffDashboard.toggleAdmin(${user.id})" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;">Retirer Admin</button>`
                                 }
                                 <button onclick="voightKampffDashboard.editUserScopes(${user.id})" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;">Gérer Services</button>
+                                <button onclick="voightKampffDashboard.toggleService(${user.id})" class="btn btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;">${user.is_service ? '👤 Utilisateur' : '🤖 Compte service'}</button>
                                 <button onclick="voightKampffDashboard.deleteUser(${user.id}, '${user.username}')" class="btn btn-danger" style="font-size: 0.75rem; padding: 4px 8px;">Supprimer</button>
                             </div>
                         </td>

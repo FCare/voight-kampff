@@ -206,6 +206,7 @@ class User(Base):
     google_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True, index=True)
     auth_provider: Mapped[str] = mapped_column(String(50), default="local")  # "local" ou "google"
     profile_picture: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # URL de la photo de profil
+    is_service: Mapped[bool] = mapped_column(Boolean, default=False)  # Compte service/agent
 
 class Session(Base):
     __tablename__ = "sessions"
@@ -355,6 +356,27 @@ def migrate_oauth_columns():
             conn.close()
         return False
 
+def migrate_is_service():
+    """Ajoute la colonne is_service à la table users si elle n'existe pas"""
+    import sqlite3
+    if not os.path.exists(DB_PATH):
+        return True
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "is_service" not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN is_service BOOLEAN DEFAULT FALSE")
+            conn.commit()
+            print("✅ Colonne is_service ajoutée")
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"❌ Erreur migration is_service: {e}")
+        return False
+
+
 def migrate_agent_access():
     """Crée la table agent_access si elle n'existe pas"""
     import sqlite3
@@ -384,6 +406,7 @@ def migrate_agent_access():
 
 async def init_db():
     migrate_oauth_columns()
+    migrate_is_service()
     migrate_agent_access()
 
     async with engine.begin() as conn:
@@ -1202,6 +1225,7 @@ async def dashboard_api(
                 'is_admin': user.is_admin,
                 'max_api_keys': user.max_api_keys,
                 'allowed_scopes': user.allowed_scopes,
+                'is_service': user.is_service,
                 'api_key_count': len(user_api_keys),
                 'api_keys': formatted_api_keys,
                 'created_at': user.created_at.isoformat() if user.created_at else None,
@@ -1238,15 +1262,10 @@ async def get_agent_access(
     session_db: AsyncSession = Depends(get_session),
 ):
     """Retourne la liste des agents (comptes service) avec leur statut d'accès pour l'utilisateur courant"""
-    # Agents = utilisateurs avec au moins une API key active, distincts du current user
+    # Agents = comptes marqués is_service=True, distincts du current user
     agents_result = await session_db.execute(
         select(User)
-        .where(User.is_active == True, User.id != current_user.id)
-        .where(
-            User.id.in_(
-                select(APIKey.user_id).where(APIKey.is_active == True).distinct()
-            )
-        )
+        .where(User.is_active == True, User.is_service == True, User.id != current_user.id)
         .order_by(User.username)
     )
     agents = agents_result.scalars().all()
@@ -1317,6 +1336,23 @@ async def revoke_agent_access(
         await session_db.commit()
 
     return JSONResponse(content={"status": "revoked"})
+
+
+@app.post("/auth/admin/users/{user_id}/toggle-service")
+async def toggle_service(
+    user_id: int,
+    current_user: User = Depends(get_current_user),
+    session_db: AsyncSession = Depends(get_session),
+):
+    if not current_user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin requis")
+    result = await session_db.execute(select(User).where(User.id == user_id))
+    user = result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
+    user.is_service = not user.is_service
+    await session_db.commit()
+    return JSONResponse(content={"is_service": user.is_service})
 
 
 @app.get("/auth/admin/traefik")
