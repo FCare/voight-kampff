@@ -1231,12 +1231,12 @@ async def create_key_web(
                 status_code=303
             )
         
-        # Check allowed scopes for this user
-        user_allowed_scopes = [s.strip() for s in current_user.allowed_scopes.split(',')]
+        # Check allowed scopes for this user (expand meta-services)
+        user_allowed_scopes = parse_user_scopes(current_user)
         requested_scopes = set(scopes)
-        
+
         # If user doesn't have "*" (all services), check individual scopes
-        if "*" not in user_allowed_scopes:
+        if current_user.allowed_scopes != "*":
             forbidden_scopes = requested_scopes - set(user_allowed_scopes)
             if forbidden_scopes:
                 return RedirectResponse(
