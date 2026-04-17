@@ -1995,6 +1995,26 @@ async def get_session_api_key(
         raise HTTPException(status_code=500, detail="Erreur lors de la génération de l'API key")
 
 
+# ========== WHOAMI ==========
+
+@app.get("/whoami")
+async def whoami(request: Request, session_db: AsyncSession = Depends(get_session)):
+    """Retourne l'identité depuis un cookie de session — sans vérification de scope."""
+    session_cookie = request.cookies.get("vk_session")
+    if not session_cookie:
+        raise HTTPException(status_code=401, detail="No session")
+    session_data = deserialize_session(session_cookie, request)
+    if not session_data:
+        raise HTTPException(status_code=401, detail="Invalid session")
+    user_result = await session_db.execute(
+        select(User).where(User.id == session_data["user_id"], User.is_active == True)
+    )
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=401, detail="Unknown user")
+    return {"user": user.username}
+
+
 # ========== MQTT AUTH ENDPOINTS (mosquitto-go-auth HTTP backend) ==========
 
 class MqttUserRequest(BaseModel):
