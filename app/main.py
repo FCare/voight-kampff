@@ -62,7 +62,7 @@ class ServiceConfig:
             "display_name": "Joshua",
             "priority": 1,
             "is_meta": True,
-            "sub_services": ["assistant", "joshua"]
+            "sub_services": ["assistant", "joshua", "nexus"]
         },
         "assistant": {
             "url": "https://assistant.caronboulme.fr",
