@@ -14,7 +14,7 @@ from typing import Optional, List, Tuple
 from urllib.parse import urlencode
 
 from fastapi import FastAPI, Header, HTTPException, Depends, status, Request, Form, Cookie
-from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import JSONResponse, RedirectResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from fastapi.middleware.cors import CORSMiddleware
@@ -1993,6 +1993,93 @@ async def get_session_api_key(
     except Exception as e:
         logger.error(f"Error getting session API key for user {current_user.username}: {e}")
         raise HTTPException(status_code=500, detail="Erreur lors de la génération de l'API key")
+
+
+# ========== MQTT AUTH ENDPOINTS (mosquitto-go-auth HTTP backend) ==========
+
+class MqttUserRequest(BaseModel):
+    username: str
+    password: str
+    clientid: Optional[str] = None
+
+class MqttAclRequest(BaseModel):
+    username: str
+    topic: str
+    clientid: Optional[str] = None
+    acc: int  # 1=read, 2=write, 3=readwrite, 4=subscribe
+
+
+@app.post("/mqtt/user")
+async def mqtt_user(payload: MqttUserRequest, session_db: AsyncSession = Depends(get_session)):
+    """Valide les credentials MQTT.
+    Accepte deux formes de mot de passe :
+      - API key VK (clé générée depuis le dashboard)
+      - Cookie de session VK (vk_session) pour les clients qui reçoivent le cookie via MQTT
+    """
+    # Tentative 1 : API key
+    result = await session_db.execute(
+        select(APIKey).where(APIKey.api_key == payload.password, APIKey.is_active == True)
+    )
+    db_key = result.scalar_one_or_none()
+    if db_key:
+        if db_key.expires_at and db_key.expires_at < datetime.utcnow():
+            raise HTTPException(status_code=403, detail="API key expired")
+        user_result = await session_db.execute(
+            select(User).where(User.id == db_key.user_id, User.is_active == True)
+        )
+        user = user_result.scalar_one_or_none()
+        if user and user.username == payload.username:
+            return Response(status_code=200)
+        raise HTTPException(status_code=403, detail="Username mismatch")
+
+    # Tentative 2 : cookie de session
+    try:
+        session_data = session_serializer.loads(
+            payload.password, max_age=SESSION_EXPIRE_HOURS * 3600
+        )
+        user_id = session_data.get("user_id")
+        user_result = await session_db.execute(
+            select(User).where(User.id == user_id, User.is_active == True)
+        )
+        user = user_result.scalar_one_or_none()
+        if user and user.username == payload.username:
+            return Response(status_code=200)
+    except Exception:
+        pass
+
+    raise HTTPException(status_code=403, detail="Invalid credentials")
+
+
+@app.post("/mqtt/superuser")
+async def mqtt_superuser():
+    """Désactive le mécanisme superuser — personne ne bypasse l'ACL"""
+    raise HTTPException(status_code=403, detail="Superuser not allowed")
+
+
+@app.post("/mqtt/acl")
+async def mqtt_acl(payload: MqttAclRequest, session_db: AsyncSession = Depends(get_session)):
+    """
+    Contrôle d'accès par topic.
+    - common/#        : accessible à tous les users authentifiés
+    - users/{username}/#  : réservé à l'utilisateur correspondant
+    """
+    user_result = await session_db.execute(
+        select(User).where(User.username == payload.username, User.is_active == True)
+    )
+    user = user_result.scalar_one_or_none()
+    if not user:
+        raise HTTPException(status_code=403, detail="Unknown user")
+
+    topic = payload.topic
+
+    if topic == "common" or topic.startswith("common/"):
+        return Response(status_code=200)
+
+    expected_prefix = f"users/{payload.username}/"
+    if topic == f"users/{payload.username}" or topic.startswith(expected_prefix):
+        return Response(status_code=200)
+
+    raise HTTPException(status_code=403, detail="Topic access denied")
 
 
 # ========== LANDING PAGE WITH CONDITIONAL REDIRECT ==========
