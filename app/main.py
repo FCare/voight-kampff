@@ -102,6 +102,11 @@ class ServiceConfig:
             "url": "https://liste.caronboulme.fr",
             "display_name": "ToDo List",
             "priority": 6
+        },
+        "nexus": {
+            "url": "https://nexus.caronboulme.fr",
+            "display_name": "Nexus MQTT",
+            "priority": 7
         }
     }
     
