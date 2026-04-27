@@ -107,12 +107,22 @@ class ServiceConfig:
             "url": "https://nexus.caronboulme.fr",
             "display_name": "Nexus MQTT",
             "priority": 7
+        },
+        "pocket-tts": {
+            "url": "https://caronboulme.fr/pocket_tts",
+            "display_name": "Pocket TTS",
+            "priority": 8
         }
     }
-    
+
     # Mapping des noms d'hôtes vers les scopes
     HOST_TO_SCOPE = {
         "liste": "alfred"  # liste.caronboulme.fr → scope alfred
+    }
+
+    # Mapping des préfixes de path vers les scopes (services sur domaine racine)
+    PATH_PREFIX_TO_SCOPE = {
+        "/pocket_tts": "pocket-tts",
     }
     
     @classmethod
@@ -2020,6 +2030,12 @@ async def verify_api_key(
         host_prefix = x_forwarded_host.split('.')[0]
         # Map host to correct scope using ServiceConfig
         service = ServiceConfig.HOST_TO_SCOPE.get(host_prefix, host_prefix)
+        # Fallback: path-based detection for services on the root domain
+        if service not in ServiceConfig.SERVICES and x_forwarded_uri:
+            for path_prefix, path_service in ServiceConfig.PATH_PREFIX_TO_SCOPE.items():
+                if x_forwarded_uri.startswith(path_prefix):
+                    service = path_service
+                    break
     
     # Debug logging
     print(f"🔍 VERIFY DEBUG - Service: {service}")
