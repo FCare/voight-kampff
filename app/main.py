@@ -248,6 +248,17 @@ class AgentAccess(Base):
     granted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
+class Agent(Base):
+    __tablename__ = "agents"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True, index=True)
+    display_name: Mapped[str] = mapped_column(String(255))
+    description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    registered_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+    last_seen: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 # Pydantic Models
 
 class VerifyResponse(BaseModel):
@@ -377,6 +388,34 @@ def migrate_is_service():
         return False
 
 
+def migrate_agents_table():
+    """Crée la table agents si elle n'existe pas"""
+    import sqlite3
+    if not os.path.exists(DB_PATH):
+        return True
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS agents (
+                id INTEGER PRIMARY KEY,
+                user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+                display_name TEXT NOT NULL,
+                description TEXT,
+                registered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_seen TIMESTAMP
+            )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS ix_agents_user_id ON agents(user_id)")
+        conn.commit()
+        conn.close()
+        print("✅ Table agents prête")
+        return True
+    except Exception as e:
+        print(f"❌ Erreur migration agents: {e}")
+        return False
+
+
 def migrate_agent_access():
     """Crée la table agent_access si elle n'existe pas"""
     import sqlite3
@@ -407,6 +446,7 @@ def migrate_agent_access():
 async def init_db():
     migrate_oauth_columns()
     migrate_is_service()
+    migrate_agents_table()
     migrate_agent_access()
 
     async with engine.begin() as conn:
