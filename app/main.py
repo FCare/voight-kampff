@@ -112,6 +112,11 @@ class ServiceConfig:
             "url": "https://pocket-tts.caronboulme.fr/",
             "display_name": "Pocket TTS",
             "priority": 8
+        },
+        "voxcpm2": {
+            "url": "https://voxcpm2.caronboulme.fr/",
+            "display_name": "VoxCPM2",
+            "priority": 9
         }
     }
 
