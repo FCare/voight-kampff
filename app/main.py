@@ -117,6 +117,11 @@ class ServiceConfig:
             "url": "https://voxcpm2.caronboulme.fr/",
             "display_name": "VoxCPM2",
             "priority": 9
+        },
+        "mnemonic": {
+            "display_name": "Mnemonic",
+            "priority": 10,
+            "is_hidden": True,
         }
     }
 
