@@ -121,7 +121,7 @@ class ServiceConfig:
         "mnemonic": {
             "display_name": "Mnemonic",
             "priority": 10,
-            "is_hidden": True,
+            "is_admin_only": True,
         }
     }
 
@@ -137,12 +137,15 @@ class ServiceConfig:
         return list(cls.SERVICES.keys())
     
     @classmethod
-    def get_visible_services(cls) -> List[Tuple[str, str, str]]:
-        """Retourne la liste des services visibles (non masqués) triés par priorité"""
+    def get_visible_services(cls, include_admin_only: bool = False) -> List[Tuple[str, str, str]]:
+        """Retourne la liste des services visibles triés par priorité"""
         visible_services = []
         for name, data in cls.SERVICES.items():
-            if not data.get("is_hidden", False):
-                visible_services.append((name, data["url"], data["display_name"]))
+            if data.get("is_hidden", False):
+                continue
+            if data.get("is_admin_only", False) and not include_admin_only:
+                continue
+            visible_services.append((name, data.get("url", ""), data["display_name"]))
         return sorted(visible_services, key=lambda x: cls.SERVICES[x[0]]["priority"])
     
     @classmethod
@@ -1290,9 +1293,9 @@ async def dashboard_api(
     # Parse user's allowed scopes for the API key creation form
     user_allowed_scopes = parse_user_scopes(current_user)
     
-    # Get all visible services (excludes hidden sub-services)
+    # Get all visible services (admins see admin-only services too)
     available_services = []
-    for service_name, service_url, display_name in ServiceConfig.get_visible_services():
+    for service_name, service_url, display_name in ServiceConfig.get_visible_services(include_admin_only=current_user.is_admin):
         service_data = ServiceConfig.SERVICES[service_name]
         available_services.append({
             'name': service_name,
