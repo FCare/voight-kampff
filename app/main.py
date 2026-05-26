@@ -1999,9 +1999,10 @@ async def check_authentication(
     if db_key.expires_at and db_key.expires_at < datetime.utcnow():
         return False, None, None, "UNAUTHENTICATED"
     
-    # Check scopes for real API keys
-    allowed_scopes = [s.strip() for s in db_key.scopes.split(',')]
-    if service not in allowed_scopes and '*' not in allowed_scopes:
+    # Check scopes for real API keys (expand meta-services like joshua-meta → mnemonic, nexus, etc.)
+    base_scopes = [s.strip() for s in db_key.scopes.split(',')]
+    allowed_scopes = ServiceConfig.expand_meta_services(base_scopes)
+    if service not in allowed_scopes and '*' not in allowed_scopes and '*' not in base_scopes:
         return False, db_key.user, None, "FORBIDDEN"
     
     # Update last_used timestamp for real API keys
