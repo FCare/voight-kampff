@@ -613,12 +613,6 @@ async def get_current_user(request: Request, session_db: AsyncSession = Depends(
     if not user_id:
         return None
     
-    # Check if session is suspicious and should be terminated
-    if is_session_suspicious(session_data):
-        print(f"🚨 SUSPICIOUS SESSION - Auto-logout for user {user_id}")
-        # Return None to force re-authentication
-        return None
-    
     # Get user from database
     result = await session_db.execute(
         select(User).where(User.id == user_id, User.is_active == True)
@@ -1901,11 +1895,7 @@ async def check_authentication(
         
         if session_data:
             user_id = session_data.get("user_id")
-            
-            # Check for suspicious activity
-            if is_session_suspicious(session_data):
-                print(f"🚨 SECURITY ALERT - Suspicious session detected for user {user_id}, denying access")
-                return False, None, None, "FORBIDDEN"
+
             
             # Check if session should be rotated
             if should_rotate_session(session_data):
