@@ -122,7 +122,22 @@ class ServiceConfig:
             "display_name": "Mnemonic",
             "priority": 10,
             "is_admin_only": True,
-        }
+        },
+        "weather": {
+            "display_name": "Weather",
+            "priority": 11,
+            "is_admin_only": True,
+        },
+        "profiler": {
+            "display_name": "Profiler",
+            "priority": 12,
+            "is_admin_only": True,
+        },
+        "search": {
+            "display_name": "Search",
+            "priority": 13,
+            "is_admin_only": True,
+        },
     }
 
     # Mapping des noms d'hôtes vers les scopes
