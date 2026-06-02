@@ -86,7 +86,8 @@ class ServiceConfig:
         "thebrain-think": {
             "url": "https://thebrain-think.caronboulme.fr",
             "display_name": "The thinking Brain",
-            "priority": 3
+            "priority": 3,
+            "is_admin_only": True
         },
         "chatterbox": {
             "url": "https://chatterbox.caronboulme.fr",
