@@ -83,59 +83,64 @@ class ServiceConfig:
             "display_name": "The Brain",
             "priority": 2
         },
+        "thebrain-think": {
+            "url": "https://thebrain-think.caronboulme.fr",
+            "display_name": "The thinking Brain",
+            "priority": 3
+        },
         "chatterbox": {
             "url": "https://chatterbox.caronboulme.fr",
             "display_name": "Chatterbox",
-            "priority": 3
+            "priority": 4
         },
         "unmute-talk": {
             "url": "https://unmute-talk.caronboulme.fr",
             "display_name": "Unmute Talk",
-            "priority": 4
+            "priority": 5
         },
         "unmute-transcript": {
             "url": "https://unmute-transcript.caronboulme.fr",
             "display_name": "Unmute Transcript",
-            "priority": 5
+            "priority": 6
         },
         "alfred": {
             "url": "https://liste.caronboulme.fr",
             "display_name": "ToDo List",
-            "priority": 6
+            "priority": 7
         },
         "nexus": {
             "url": "https://nexus.caronboulme.fr",
             "display_name": "Nexus MQTT",
-            "priority": 7
+            "priority": 8
         },
         "pocket-tts": {
             "url": "https://pocket-tts.caronboulme.fr/",
             "display_name": "Pocket TTS",
-            "priority": 8
+            "priority": 9
         },
         "voxcpm2": {
             "url": "https://voxcpm2.caronboulme.fr/",
             "display_name": "VoxCPM2",
-            "priority": 9
+            "priority": 10
         },
         "mnemonic": {
             "display_name": "Mnemonic",
-            "priority": 10,
+            "priority": 11,
             "is_admin_only": True,
         },
         "weather": {
             "display_name": "Weather",
-            "priority": 11,
+            "priority": 12,
             "is_admin_only": True,
         },
         "profiler": {
             "display_name": "Profiler",
-            "priority": 12,
+            "priority": 13,
             "is_admin_only": True,
         },
         "search": {
             "display_name": "Search",
-            "priority": 13,
+            "priority": 14,
             "is_admin_only": True,
         },
     }
@@ -836,20 +841,13 @@ async def root(request: Request, session_db: AsyncSession = Depends(get_session)
     
     # Get the host to determine source domain
     host = request.headers.get('host', '')
-    is_from_www = host.startswith('www.caronboulme.fr')
     
     print(f"🔍 ROOT DEBUG - Is from www.caronboulme.fr: {is_from_www}")
     
     if is_authenticated and user_name and user_name != "unknown":
-        if is_from_www:
-            # Only redirect to TheBrain if coming from www.caronboulme.fr
-            thebrain_url = ServiceConfig.SERVICES["thebrain"]["url"]
-            print(f"🔍 ROOT DEBUG - Redirecting to TheBrain from www")
-            return RedirectResponse(url=f"{thebrain_url}/", status_code=302)
-        else:
-            # From auth.caronboulme.fr or other domains, redirect to dashboard
-            print(f"🔍 ROOT DEBUG - Redirecting to dashboard from auth/other")
-            return RedirectResponse(url="/auth/dashboard", status_code=302)
+        # From auth.caronboulme.fr or other domains, redirect to dashboard
+        print(f"🔍 ROOT DEBUG - Redirecting to dashboard from auth/other")
+        return RedirectResponse(url="/auth/dashboard", status_code=302)
     
     # No valid session, redirect to login page
     print(f"🔍 ROOT DEBUG - Not authenticated, redirecting to login")
