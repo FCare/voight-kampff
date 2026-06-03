@@ -144,6 +144,11 @@ class ServiceConfig:
             "priority": 14,
             "is_admin_only": True,
         },
+        "news": {
+            "display_name": "News",
+            "priority": 15,
+            "is_admin_only": True,
+        },
     }
 
     # Mapping des noms d'hôtes vers les scopes
