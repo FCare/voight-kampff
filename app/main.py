@@ -847,7 +847,8 @@ async def root(request: Request, session_db: AsyncSession = Depends(get_session)
     
     # Get the host to determine source domain
     host = request.headers.get('host', '')
-    
+    is_from_www = 'www.caronboulme.fr' in host
+
     print(f"🔍 ROOT DEBUG - Is from www.caronboulme.fr: {is_from_www}")
     
     if is_authenticated and user_name and user_name != "unknown":
@@ -2325,6 +2326,12 @@ async def mqtt_acl(payload: MqttAclRequest, session_db: AsyncSession = Depends(g
     topic = payload.topic
 
     if topic == "common" or topic.startswith("common/"):
+        return Response(status_code=200)
+
+    if (topic == "service" or topic.startswith("service/")) and (user.is_service or user.is_admin):
+        return Response(status_code=200)
+
+    if topic == "reply" or topic.startswith("reply/"):
         return Response(status_code=200)
 
     expected_prefix = f"users/{payload.username}/"
