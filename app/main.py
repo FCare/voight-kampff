@@ -124,29 +124,34 @@ class ServiceConfig:
             "display_name": "VoxCPM2",
             "priority": 10
         },
+        "code": {
+            "url": "https://code.caronboulme.fr/",
+            "display_name": "Code Server",
+            "priority": 11
+        },
         "mnemonic": {
             "display_name": "Mnemonic",
-            "priority": 11,
+            "priority": 12,
             "is_admin_only": True,
         },
         "weather": {
             "display_name": "Weather",
-            "priority": 12,
+            "priority": 13,
             "is_admin_only": True,
         },
         "profiler": {
             "display_name": "Profiler",
-            "priority": 13,
+            "priority": 14,
             "is_admin_only": True,
         },
         "search": {
             "display_name": "Search",
-            "priority": 14,
+            "priority": 15,
             "is_admin_only": True,
         },
         "news": {
             "display_name": "News",
-            "priority": 15,
+            "priority": 16,
             "is_admin_only": True,
         },
     }
@@ -250,7 +255,10 @@ class User(Base):
     google_id: Mapped[Optional[str]] = mapped_column(String(255), unique=True, nullable=True, index=True)
     auth_provider: Mapped[str] = mapped_column(String(50), default="local")  # "local" ou "google"
     profile_picture: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)  # URL de la photo de profil
-    is_service: Mapped[bool] = mapped_column(Boolean, default=False)  # Compte service/agent
+    # Accès des agents (autres comptes) à l'espace MQTT de cet utilisateur : autorisé par
+    # défaut, ce compte peut le désactiver lui-même s'il ne veut pas que des agents
+    # publient dans son propre espace de topics.
+    agents_disabled: Mapped[bool] = mapped_column(Boolean, default=False)
 
 class Session(Base):
     __tablename__ = "sessions"
@@ -281,15 +289,6 @@ class APIKey(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_used: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
     expires_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-
-
-class AgentAccess(Base):
-    __tablename__ = "agent_access"
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    agent_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
-    granted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 
 class Agent(Base):
@@ -411,27 +410,6 @@ def migrate_oauth_columns():
             conn.close()
         return False
 
-def migrate_is_service():
-    """Ajoute la colonne is_service à la table users si elle n'existe pas"""
-    import sqlite3
-    if not os.path.exists(DB_PATH):
-        return True
-    try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("PRAGMA table_info(users)")
-        columns = [row[1] for row in cursor.fetchall()]
-        if "is_service" not in columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN is_service BOOLEAN DEFAULT FALSE")
-            conn.commit()
-            print("✅ Colonne is_service ajoutée")
-        conn.close()
-        return True
-    except Exception as e:
-        print(f"❌ Erreur migration is_service: {e}")
-        return False
-
-
 def migrate_agents_table():
     """Crée la table agents si elle n'existe pas"""
     import sqlite3
@@ -460,38 +438,31 @@ def migrate_agents_table():
         return False
 
 
-def migrate_agent_access():
-    """Crée la table agent_access si elle n'existe pas"""
+def migrate_agents_disabled():
+    """Ajoute la colonne agents_disabled à la table users si elle n'existe pas"""
     import sqlite3
     if not os.path.exists(DB_PATH):
         return True
     try:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS agent_access (
-                id INTEGER PRIMARY KEY,
-                owner_user_id INTEGER NOT NULL REFERENCES users(id),
-                agent_user_id INTEGER NOT NULL REFERENCES users(id),
-                granted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
-        """)
-        cursor.execute("CREATE INDEX IF NOT EXISTS ix_agent_access_owner ON agent_access(owner_user_id)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS ix_agent_access_agent ON agent_access(agent_user_id)")
-        conn.commit()
+        cursor.execute("PRAGMA table_info(users)")
+        columns = [row[1] for row in cursor.fetchall()]
+        if "agents_disabled" not in columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN agents_disabled BOOLEAN DEFAULT FALSE")
+            conn.commit()
+            print("✅ Colonne agents_disabled ajoutée")
         conn.close()
-        print("✅ Table agent_access prête")
         return True
     except Exception as e:
-        print(f"❌ Erreur migration agent_access: {e}")
+        print(f"❌ Erreur migration agents_disabled: {e}")
         return False
 
 
 async def init_db():
     migrate_oauth_columns()
-    migrate_is_service()
     migrate_agents_table()
-    migrate_agent_access()
+    migrate_agents_disabled()
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
@@ -1297,7 +1268,6 @@ async def dashboard_api(
                 'is_admin': user.is_admin,
                 'max_api_keys': user.max_api_keys,
                 'allowed_scopes': user.allowed_scopes,
-                'is_service': user.is_service,
                 'api_key_count': len(user_api_keys),
                 'api_keys': formatted_api_keys,
                 'created_at': user.created_at.isoformat() if user.created_at else None,
@@ -1331,100 +1301,24 @@ async def dashboard_api(
 @app.get("/api/agent-access")
 async def get_agent_access(
     current_user: User = Depends(get_current_user),
-    session_db: AsyncSession = Depends(get_session),
 ):
-    """Retourne la liste des agents (comptes service) avec leur statut d'accès pour l'utilisateur courant"""
-    # Agents = comptes marqués is_service=True, distincts du current user
-    agents_result = await session_db.execute(
-        select(User)
-        .where(User.is_active == True, User.is_service == True, User.id != current_user.id)
-        .order_by(User.username)
-    )
-    agents = agents_result.scalars().all()
-
-    # Accès déjà accordés
-    granted_result = await session_db.execute(
-        select(AgentAccess).where(AgentAccess.owner_user_id == current_user.id)
-    )
-    granted_ids = {row.agent_user_id for row in granted_result.scalars().all()}
-
-    return JSONResponse(content=[
-        {
-            "username": a.username,
-            "granted": a.id in granted_ids,
-        }
-        for a in agents
-    ])
+    """Statut d'accès des agents à l'espace MQTT de l'utilisateur courant. Autorisé par
+    défaut — ce compte peut le désactiver lui-même via /api/agent-access/toggle."""
+    return JSONResponse(content={"agents_disabled": current_user.agents_disabled})
 
 
-@app.post("/api/agent-access/{agent_username}/grant")
-async def grant_agent_access(
-    agent_username: str,
+@app.post("/api/agent-access/toggle")
+async def toggle_agent_access(
     current_user: User = Depends(get_current_user),
     session_db: AsyncSession = Depends(get_session),
 ):
-    agent_result = await session_db.execute(
-        select(User).where(User.username == agent_username, User.is_active == True)
-    )
-    agent = agent_result.scalar_one_or_none()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent introuvable")
-
-    existing = await session_db.execute(
-        select(AgentAccess).where(
-            AgentAccess.owner_user_id == current_user.id,
-            AgentAccess.agent_user_id == agent.id,
-        )
-    )
-    if not existing.scalar_one_or_none():
-        session_db.add(AgentAccess(owner_user_id=current_user.id, agent_user_id=agent.id))
-        await session_db.commit()
-
-    return JSONResponse(content={"status": "granted"})
-
-
-@app.delete("/api/agent-access/{agent_username}/revoke")
-async def revoke_agent_access(
-    agent_username: str,
-    current_user: User = Depends(get_current_user),
-    session_db: AsyncSession = Depends(get_session),
-):
-    agent_result = await session_db.execute(
-        select(User).where(User.username == agent_username, User.is_active == True)
-    )
-    agent = agent_result.scalar_one_or_none()
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent introuvable")
-
-    result = await session_db.execute(
-        select(AgentAccess).where(
-            AgentAccess.owner_user_id == current_user.id,
-            AgentAccess.agent_user_id == agent.id,
-        )
-    )
-    row = result.scalar_one_or_none()
-    if row:
-        await session_db.delete(row)
-        await session_db.commit()
-
-    return JSONResponse(content={"status": "revoked"})
-
-
-@app.post("/auth/admin/users/{user_id}/toggle-service")
-async def toggle_service(
-    user_id: int,
-    current_user: User = Depends(get_current_user),
-    session_db: AsyncSession = Depends(get_session),
-):
-    if not current_user.is_admin:
-        raise HTTPException(status_code=403, detail="Admin requis")
-    result = await session_db.execute(select(User).where(User.id == user_id))
-    user = result.scalar_one_or_none()
-    if not user:
-        raise HTTPException(status_code=404, detail="Utilisateur introuvable")
-    user.is_service = not user.is_service
+    """Active/désactive l'accès des agents (autres comptes) à l'espace MQTT de
+    l'utilisateur courant — self-service, aucun droit admin requis : chacun ne contrôle
+    que son propre espace."""
+    current_user.agents_disabled = not current_user.agents_disabled
     await session_db.commit()
-    return JSONResponse(content={"is_service": user.is_service})
+    return JSONResponse(content={"agents_disabled": current_user.agents_disabled})
+
 
 
 @app.get("/auth/admin/traefik")
@@ -2328,7 +2222,7 @@ async def mqtt_acl(payload: MqttAclRequest, session_db: AsyncSession = Depends(g
     if topic == "common" or topic.startswith("common/"):
         return Response(status_code=200)
 
-    if (topic == "service" or topic.startswith("service/")) and (user.is_service or user.is_admin):
+    if topic == "service" or topic.startswith("service/"):
         return Response(status_code=200)
 
     if topic == "reply" or topic.startswith("reply/"):
@@ -2338,7 +2232,8 @@ async def mqtt_acl(payload: MqttAclRequest, session_db: AsyncSession = Depends(g
     if topic == f"users/{payload.username}" or topic.startswith(expected_prefix):
         return Response(status_code=200)
 
-    # Cross-user topic: check if agent has been explicitly granted access by the owner
+    # Topic cross-utilisateur : autorisé par défaut (accès agents ouvert par défaut),
+    # sauf si le propriétaire de l'espace a explicitement désactivé cet accès lui-même.
     if topic.startswith("users/"):
         parts = topic.split("/")
         if len(parts) >= 2:
@@ -2347,15 +2242,8 @@ async def mqtt_acl(payload: MqttAclRequest, session_db: AsyncSession = Depends(g
                 select(User).where(User.username == owner_username, User.is_active == True)
             )
             owner = owner_result.scalar_one_or_none()
-            if owner:
-                access_result = await session_db.execute(
-                    select(AgentAccess).where(
-                        AgentAccess.owner_user_id == owner.id,
-                        AgentAccess.agent_user_id == user.id,
-                    )
-                )
-                if access_result.scalar_one_or_none():
-                    return Response(status_code=200)
+            if owner and not owner.agents_disabled:
+                return Response(status_code=200)
 
     raise HTTPException(status_code=403, detail="Topic access denied")
 
