@@ -78,6 +78,27 @@ class ServiceConfig:
             "is_hidden": True,  # Masqué dans l'interface utilisateur
             "parent_meta": "joshua-meta"
         },
+        "panoramix-meta": {
+            "url": "https://chat.caronboulme.fr",  # URL principal vers le frontend
+            "display_name": "Panoramix (Joshua)",
+            "priority": 1,
+            "is_meta": True,
+            "sub_services": ["chat", "panoramix"]
+        },
+        "chat": {
+            "url": "https://chat.caronboulme.fr",
+            "display_name": "Panoramix Chat",
+            "priority": 1,
+            "is_hidden": True,  # Masqué dans l'interface utilisateur
+            "parent_meta": "panoramix-meta"
+        },
+        "panoramix": {
+            "url": "https://panoramix.caronboulme.fr",
+            "display_name": "Panoramix API",
+            "priority": 1,
+            "is_hidden": True,  # Masqué dans l'interface utilisateur
+            "parent_meta": "panoramix-meta"
+        },
         "thebrain": {
             "url": "https://thebrain.caronboulme.fr",
             "display_name": "The Brain",
@@ -153,6 +174,21 @@ class ServiceConfig:
             "display_name": "News",
             "priority": 16,
             "is_admin_only": True,
+        },
+        "pdf": {
+            "display_name": "PDF",
+            "priority": 17,
+            "is_admin_only": True,
+        },
+        "photobook": {
+            "url": "https://photobook.caronboulme.fr",
+            "display_name": "Photobook",
+            "priority": 18,
+        },
+        "contes": {
+            "url": "https://contes.caronboulme.fr",
+            "display_name": "Contes",
+            "priority": 19,
         },
     }
 
