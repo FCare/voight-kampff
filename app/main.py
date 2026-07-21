@@ -171,9 +171,9 @@ class ServiceConfig:
             "is_admin_only": True,
         },
         "news": {
+            "url": "https://news.caronboulme.fr",
             "display_name": "News",
             "priority": 16,
-            "is_admin_only": True,
         },
         "pdf": {
             "display_name": "PDF",
