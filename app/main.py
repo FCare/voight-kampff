@@ -190,6 +190,11 @@ class ServiceConfig:
             "display_name": "Contes",
             "priority": 19,
         },
+        "people": {
+            "url": "https://people.caronboulme.fr",
+            "display_name": "Family Tree",
+            "priority": 20,
+        },
     }
 
     # Mapping des noms d'hôtes vers les scopes
